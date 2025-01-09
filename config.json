@@ -3,7 +3,7 @@
     "cuda": true,
     "database": {
         "name": "Remote",
-        "base_path": "F:/SR-RS/Remote Sensing/Data",
+        "base_path": "F:/Remote Sensing/Data",
         "image_bands": 3
     },
     "output": {
@@ -15,12 +15,12 @@
         "learning_rate": 1e-4,
         "seed": 1,
         "train_data": {
-            "normal": "F:/SR-RS/Remote Sensing/Data/Train/normal/4",
-            "noise": "F:/SR-RS/Remote Sensing/Data/Train/noise/4"
+            "normal": "F:/Remote Sensing/Data/Train/normal/4",
+            "noise": "F:/Remote Sensing/Data/Train/noise/4"
         },
         "val_data": {
-            "normal": "F:/SR-RS/Remote Sensing/Data/Validation/Train/normal/4",
-            "noise": "F:/SR-RS/Remote Sensing/Data/Validation/Train/noise/4"
+            "normal": "F:/Remote Sensing/Data/Validation/Train/normal/4",
+            "noise": "F:/Remote Sensing/Data/Validation/Train/noise/4"
         }
     },
     "gpu": {
@@ -60,11 +60,11 @@
     }
 
     },
-    "model_list": ["Propuesto"],
+    "model_list": ["SFCSR","MCNet","Propuesto"],
     "test": {
         "test_data": {
-            "normal": "F:/SR-RS/Remote Sensing/Data/Test/Normal/4",
-            "noise": "F:/SR-RS/Remote Sensing/Data/Test/Noise/4"
+            "normal": "F:/Remote Sensing/Data/Test/Normal/4",
+            "noise": "F:/Remote Sensing/Data/Test/Noise/4"
         }
     }
 }
