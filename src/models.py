@@ -338,6 +338,7 @@ class MCNet(nn.Module):
 ############################################
 ###############PROPUESTO####################
 ############################################
+#Ocupa misma cantidad de parametros que MCNET
 #Visual Attention Network with Large Kernel Attention (Based in Code GitHub)
 # Bloque de Atención: Large Kernel Attention (LKA)
 class LargeKernelAttention(nn.Module):

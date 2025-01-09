@@ -7,11 +7,11 @@
         "image_bands": 3
     },
     "output": {
-        "results_path": "output/resultados_x4"
+        "results_path": "F:/Remote Sensing/Data/output"
     },
     "training": {
         "batch_size": 64,
-        "epochs": 50,
+        "epochs": 2,
         "learning_rate": 1e-4,
         "seed": 1,
         "train_data": {
@@ -42,25 +42,25 @@
         },
         "Propuesto": {
         "upscale_factor": 4,
-        "n_feats": 32,
+        "n_feats": 16,
         "n_module": 4,
         "n_conv": 1,  
         "cross_attention": {
-            "query_key_reduction": 8
+            "query_key_reduction": 32
         },
         "denoising_block": {
-            "kernel_size": 3,
+            "kernel_size": 2,
             "activation": "ReLU"
         },
         "attention_block": {
-            "kernel_size": 15,
+            "kernel_size": 5,
             "reduction": 8
         },
         "n_colors": 3
     }
 
     },
-    "model_list": ["SFCSR","MCNet","Propuesto"],
+    "model_list": ["SFCSR", "MCNet", "Propuesto"],
     "test": {
         "test_data": {
             "normal": "F:/Remote Sensing/Data/Test/Normal/4",

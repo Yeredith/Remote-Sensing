@@ -127,17 +127,14 @@ def val(val_loader, model, criterion, device, model_name):
     model.eval()  # Establecer el modelo en modo evaluación
     total_loss = 0
 
-    with torch.no_grad():  # Desactivar el cálculo de gradientes
+    with torch.no_grad():  
         for batch in tqdm(val_loader, desc="Validando"):
-            # Asegurar que el batch esté en el dispositivo correcto
             inputs = batch[0].permute(0, 2, 3, 1)
             labels = batch[1].permute(0, 2, 3, 1)
 
-            # Mover los tensores al dispositivo adecuado (GPU o CPU)
             inputs = inputs.to(device)
             labels = labels.to(device)
 
-            # Validar dimensiones
             if len(inputs.size()) != 4 or len(labels.size()) != 4:
                 raise ValueError("Las dimensiones de 'inputs' y 'labels' no son correctas. "
                                  "Se esperaban tensores con 4 dimensiones.")
@@ -150,7 +147,7 @@ def val(val_loader, model, criterion, device, model_name):
             else:
                 # Lógica para modelos SFCSR y similares
                 batch_loss = 0
-                for i in range(inputs.size(1)):  # Procesar por banda si es necesario
+                for i in range(inputs.size(1)):  # Procesar por banda
                     if i == 0:
                         x = inputs[:, 0:3, :, :]
                         new_label = labels[:, 0:3, :, :]
@@ -179,9 +176,12 @@ def val(val_loader, model, criterion, device, model_name):
 
 
 
-def save_checkpoint(model, optimizer, checkpoints_path, epoch):
+def save_checkpoint(model, optimizer, checkpoints_path, epoch, data_type="normal"):
+
+    #Guarda el checkpoint del modelo con un sufijo que indica el tipo de datos.
+
     try:
-        model_out_path = os.path.join(checkpoints_path, f"model_epoch_{epoch}.pth")
+        model_out_path = os.path.join(checkpoints_path, f"model_epoch_{epoch}_{data_type}.pth")
         os.makedirs(checkpoints_path, exist_ok=True)
         state = {
             "epoch": epoch,
@@ -194,7 +194,11 @@ def save_checkpoint(model, optimizer, checkpoints_path, epoch):
         print(f"Error al guardar el checkpoint en {checkpoints_path}: {e}")
 
 
-def save_metrics_to_csv(csv_path, loss_values, psnr_values):
+def save_metrics_to_csv(csv_path, loss_values, psnr_values, data_type="normal"):
+
+    #Guarda las métricas en un archivo CSV con un sufijo que indica el tipo de datos.
+ 
+    csv_path = f"{os.path.splitext(csv_path)[0]}_{data_type}.csv"  # Agregar tipo de datos al nombre del archivo
     with open(csv_path, mode='w', newline='') as csv_file:
         writer = csv.writer(csv_file)
         writer.writerow(["Epoch", "Loss", "PSNR"])
@@ -204,17 +208,29 @@ def save_metrics_to_csv(csv_path, loss_values, psnr_values):
 
 import matplotlib.pyplot as plt
 
-def load_last_checkpoint(model, optimizer, checkpoints_path):
+def load_last_checkpoint(model, optimizer, checkpoints_path, mode=None):
     if not os.path.exists(checkpoints_path):
         print(f"No se encontró el directorio de checkpoints: {checkpoints_path}. Iniciando desde el principio.")
         return model, optimizer, 0
 
-    checkpoint_files = sorted(
-        [f for f in os.listdir(checkpoints_path) if f.startswith("model_epoch_")],
-        key=lambda x: int(x.split("_")[-1].split(".")[0]),
-    )
+    # Obtener lista de checkpoints que coincidan con el patrón
+    if mode:
+        checkpoint_files = [f for f in os.listdir(checkpoints_path) if f.startswith("model_epoch_") and f.endswith(f"_{mode}.pth")]
+    else:
+        checkpoint_files = [f for f in os.listdir(checkpoints_path) if f.startswith("model_epoch_")]
+
     if not checkpoint_files:
         print(f"No se encontraron checkpoints en {checkpoints_path}. Iniciando desde el principio.")
+        return model, optimizer, 0
+
+    # Ordenar por el número de época extraído del nombre del archivo
+    try:
+        checkpoint_files = sorted(
+            checkpoint_files,
+            key=lambda x: int(x.split("_")[2]),  # Extrae el número de época
+        )
+    except ValueError as e:
+        print(f"Error al procesar nombres de checkpoint: {e}")
         return model, optimizer, 0
 
     last_checkpoint_path = os.path.join(checkpoints_path, checkpoint_files[-1])
@@ -229,6 +245,8 @@ def load_last_checkpoint(model, optimizer, checkpoints_path):
     except Exception as e:
         print(f"Error al cargar el checkpoint desde {last_checkpoint_path}: {e}")
         return model, optimizer, 0
+
+
 
 
 
@@ -423,13 +441,23 @@ def main():
         for model_name in config["model_list"]:
             print(f"Iniciando entrenamiento para el modelo: {model_name}")
 
-            # Crear datasets y DataLoaders
-            train_dataset = TrainsetFromFolder(config["training"]["train_data"]["normal"], config["database"]["image_bands"])
-            val_dataset = ValsetFromFolder(config["training"]["val_data"]["normal"], config["database"]["image_bands"])
-            test_dataset = TestsetFromFolder(config["test"]["test_data"]["normal"], config["database"]["image_bands"])
+            # Crear datasets y DataLoaders para imágenes normales
+            train_normal_dataset = TrainsetFromFolder(config["training"]["train_data"]["normal"], config["database"]["image_bands"])
+            train_normal_loader = DataLoader(
+                train_normal_dataset, batch_size=config["training"]["batch_size"], shuffle=True, pin_memory=True
+            )
 
-            train_loader = DataLoader(train_dataset, batch_size=config["training"]["batch_size"], shuffle=True, pin_memory=True)
+            # Crear datasets y DataLoaders para imágenes con ruido
+            train_noise_dataset = TrainsetFromFolder(config["training"]["train_data"]["noise"], config["database"]["image_bands"])
+            train_noise_loader = DataLoader(
+                train_noise_dataset, batch_size=config["training"]["batch_size"], shuffle=True, pin_memory=True
+            )
+
+            # Validación y prueba
+            val_dataset = ValsetFromFolder(config["training"]["val_data"]["normal"], config["database"]["image_bands"])
             val_loader = DataLoader(val_dataset, batch_size=config["training"]["batch_size"], shuffle=False, pin_memory=True)
+
+            test_dataset = TestsetFromFolder(config["test"]["test_data"]["normal"], config["database"]["image_bands"])
             test_loader = DataLoader(test_dataset, batch_size=config["training"]["batch_size"], shuffle=False, pin_memory=True)
 
             # Selección y configuración del modelo
@@ -458,27 +486,48 @@ def main():
             # Cargar checkpoint
             model, optimizer, start_epoch = load_last_checkpoint(model, optimizer, checkpoints_path)
 
-            # Entrenamiento
+            # Entrenamiento con imágenes normales y luego con imágenes con ruido
             if start_epoch < config["training"]["epochs"]:
                 train_loss_values = []
                 val_loss_values = []
 
-                for epoch in range(start_epoch + 1, config["training"]["epochs"] + 1):
-                    print(f"Epoch {epoch}/{config['training']['epochs']} para modelo {model_name}")
+                # Entrenamiento con imágenes normales
+                print(f"Iniciando entrenamiento con imágenes normales para modelo {model_name}...")
+                for epoch in range(start_epoch + 1, config["training"]["epochs"] // 2 + 1):
+                    print(f"Epoch {epoch}/{config['training']['epochs']} (imágenes normales) para modelo {model_name}")
 
                     # Entrenamiento
-                    train_loss = train(train_loader, model, optimizer, criterion, device, model_name)
-                    print(f"Train Loss: {train_loss}")
+                    train_loss = train(train_normal_loader, model, optimizer, criterion, device, model_name)
+                    print(f"Train Loss (imágenes normales): {train_loss}")
 
                     # Validación
                     val_loss = val(val_loader, model, criterion, device, model_name)
-                    print(f"Validation Loss: {val_loss}")
+                    print(f"Validation Loss (imágenes normales): {val_loss}")
 
                     train_loss_values.append(train_loss)
                     val_loss_values.append(val_loss)
 
                     # Guardar checkpoint
-                    save_checkpoint(model, optimizer, checkpoints_path, epoch)
+                    save_checkpoint(model, optimizer, checkpoints_path, epoch, "normal")
+
+                # Entrenamiento con imágenes con ruido
+                print(f"Iniciando entrenamiento con imágenes con ruido para modelo {model_name}...")
+                for epoch in range(config["training"]["epochs"] // 2 + 1, config["training"]["epochs"] + 1):
+                    print(f"Epoch {epoch}/{config['training']['epochs']} (imágenes con ruido) para modelo {model_name}")
+
+                    # Entrenamiento
+                    train_loss = train(train_noise_loader, model, optimizer, criterion, device, model_name)
+                    print(f"Train Loss (imágenes con ruido): {train_loss}")
+
+                    # Validación
+                    val_loss = val(val_loader, model, criterion, device, model_name)
+                    print(f"Validation Loss (imágenes con ruido): {val_loss}")
+
+                    train_loss_values.append(train_loss)
+                    val_loss_values.append(val_loss)
+
+                    # Guardar checkpoint
+                    save_checkpoint(model, optimizer, checkpoints_path, epoch, "noise")
 
                 # Guardar métricas de entrenamiento y validación
                 save_metrics_to_csv(csv_path, train_loss_values, val_loss_values)
@@ -488,6 +537,7 @@ def main():
             test_model(test_loader, model, model_name, device, test_path)
 
             print(f"Entrenamiento y evaluación completados para el modelo: {model_name}")
+
 
     except Exception as e:
         print(f"Error durante la ejecución: {e}")
