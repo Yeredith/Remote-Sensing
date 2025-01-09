@@ -1,0 +1,123 @@
+<<<<<<< HEAD
+{
+    "cuda": true,
+    "database": {
+        "name": "Remote",
+        "base_path": "F:/SR-RS/Remote Sensing/Data",
+        "image_bands": 3
+    },
+    "output": {
+        "results_path": "output/resultados_x4"
+    },
+    "training": {
+        "batch_size": 64,
+        "epochs": 2,
+        "learning_rate": 1e-4,
+        "seed": 1,
+        "train_data": {
+            "normal": "F:/SR-RS/Remote Sensing/Data/Train/normal/4",
+            "noise": "F:/SR-RS/Remote Sensing/Data/Train/noise/4"
+        },
+        "val_data": {
+            "normal": "F:/SR-RS/Remote Sensing/Data/Validation/Train/normal/4",
+            "noise": "F:/SR-RS/Remote Sensing/Data/Validation/Train/noise/4"
+        }
+    },
+    "gpu": {
+        "use_multi_gpu": false,
+        "gpu_ids": [0],
+        "num_threads": 12
+    },
+    "models": {
+        "SFCSR": {
+            "upscale_factor": 4,
+            "n_feats": 32,
+            "n_module": 3
+        },
+        "MCNet": {
+            "upscale_factor": 4,
+            "n_feats": 32,
+            "n_conv": 1,
+            "n_colors": 3
+        },
+        "Propuesto": {
+        "upscale_factor": 4,
+        "n_feats": 32,
+        "n_module": 4,
+        "n_conv": 1,  
+        "cross_attention": {
+            "query_key_reduction": 8
+        },
+        "denoising_block": {
+            "kernel_size": 3,
+            "activation": "ReLU"
+        },
+        "attention_block": {
+            "kernel_size": 15,
+            "reduction": 8
+        },
+        "n_colors": 3
+    }
+
+    },
+    "model_list": ["Propuesto"],
+    "test": {
+        "test_data": {
+            "normal": "F:/SR-RS/Remote Sensing/Data/Test/Normal/4",
+            "noise": "F:/SR-RS/Remote Sensing/Data/Test/Noise/4"
+        }
+    }
+}
+=======
+{
+    "cuda": true,
+    "database": {
+        "name": "CAVE",
+        "base_path": "Data",
+        "image_bands": 31
+    },
+    "output": {
+        "results_path": "output/resultados_x4"
+    },
+    "training": {
+        "batch_size": 16,
+        "epochs": 15,
+        "learning_rate": 1e-4,
+        "seed": 1
+    },
+    "gpu": {
+        "use_multi_gpu": true,
+        "gpu_ids": [0, 1, 2, 3],
+        "num_threads": 12
+    },
+    "models": {
+        "SFCSR": {
+            "upscale_factor": 4,
+            "n_feats": 32,
+            "n_module": 3
+        },
+        "MCNet": {
+            "upscale_factor": 4,
+            "n_feats": 32,
+            "n_conv": 1,
+            "n_colors": 31
+        },
+        "SFCCBAM": {
+            "upscale_factor": 4,
+            "n_feats": 32,
+            "n_module": 5
+        },
+        "HYBRID_SE_CBAM": {
+            "upscale_factor": 4,
+            "n_feats": 32,
+            "n_module": 5,
+            "attention_blocks": {
+                "se_reduction": 8,
+                "cbam_reduction": 8,
+                "cbam_kernel_size": 7
+            }
+        }
+    },
+    "model_list": ["SFCSR", "MCNet", "SFCCBAM", "HYBRID_SE_CBAM"]
+}
+>>>>>>> ef3cf9e75d1c1da1797a6d08e5d3a5d4c332c368
