@@ -1,5 +1,5 @@
 # Instrucciones
-- Paso 1. Descargar el dataset de google drive. password:lnff
+- Paso 1. Descargar el dataset de google drive https://drive.google.com/file/d/19VOEQLcJa_bS28eSIwqOJDD72LEfGxoD/view, password:lnff
 - Paso 2. Modificar el directorio de los archivos de la carpeta Preprocessing para generar los datos de entrenamiento, validacion y test con ruido y sin ruido y guardarlas de la siguiente forma.
 
 -Remote Sensing
