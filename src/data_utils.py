@@ -35,6 +35,29 @@ class TestsetFromFolder(data.Dataset):
         """Devuelve el número total de archivos en el dataset"""
         return len(self.image_filenames)
 
+class TestsetFromFolder_Noisy(data.Dataset):
+    def __init__(self, dataset_dir, image_bands=None):
+        """Inicializa el dataset de test desde un directorio"""
+        super(TestsetFromFolder_Noisy, self).__init__()
+        self.image_bands = image_bands  # Guarda el parámetro image_bands (si es necesario)
+        self.image_filenames = [join(dataset_dir, x) for x in os.listdir(dataset_dir) if is_image_file(x)]
+
+    def __getitem__(self, index):
+        """Carga una imagen y su etiqueta (HR) desde el archivo .mat"""
+        mat = scio.loadmat(self.image_filenames[index])
+        input = mat['LR_noisy'].astype(np.float32)
+        label = mat['HR'].astype(np.float32)
+        
+        # Convertir las imágenes a formato CxHxW (canal x alto x ancho)
+        input = input.transpose(2, 0, 1)  # Cambiar de HxWxC a CxHxW
+        label = label.transpose(2, 0, 1)  # Cambiar de HxWxC a CxHxW
+        
+        image_name = os.path.basename(self.image_filenames[index])  # Obtener el nombre del archivo
+        return torch.from_numpy(input).float(), torch.from_numpy(label).float(), image_name  # Incluye el nombre de la imagen
+
+    def __len__(self):
+        """Devuelve el número total de archivos en el dataset"""
+        return len(self.image_filenames)
 
 
 class TrainsetFromFolder(data.Dataset):

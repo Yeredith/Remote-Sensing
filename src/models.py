@@ -338,11 +338,10 @@ class MCNet(nn.Module):
 ############################################
 ###############PROPUESTO####################
 ############################################
-#Ocupa misma cantidad de parametros que MCNET
 #Visual Attention Network with Large Kernel Attention (Based in Code GitHub)
 # Bloque de Atención: Large Kernel Attention (LKA)
 class LargeKernelAttention(nn.Module):
-    def __init__(self, n_feats, kernel_size=15, reduction=8):
+    def __init__(self, n_feats, kernel_size, reduction):
         super(LargeKernelAttention, self).__init__()
         self.conv1 = nn.Conv2d(n_feats, n_feats // reduction, kernel_size=1)
         self.conv2 = nn.Conv2d(n_feats // reduction, n_feats // reduction, kernel_size=kernel_size, padding=kernel_size // 2, groups=n_feats // reduction)
@@ -358,7 +357,7 @@ class LargeKernelAttention(nn.Module):
 
 # Bloque de Atención Cruzada entre canales RGB
 class CrossChannelAttention(nn.Module):
-    def __init__(self, n_feats, reduction=8):
+    def __init__(self, n_feats, reduction):
         super(CrossChannelAttention, self).__init__()
         self.query = nn.Conv2d(n_feats, n_feats // reduction, 1)
         self.key = nn.Conv2d(n_feats, n_feats // reduction, 1)

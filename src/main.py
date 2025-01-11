@@ -10,10 +10,12 @@ import matplotlib.pyplot as plt
 import json
 import csv
 import numpy as np
-from data_utils import TrainsetFromFolder, ValsetFromFolder, TestsetFromFolder, ValsetFromFolder2
+from data_utils import TrainsetFromFolder, ValsetFromFolder, TestsetFromFolder, TestsetFromFolder_Noisy
 from models import SFCSR, MCNet,Propuesto
 from scipy.io import savemat
 
+# Configuración de CuDNN para un mejor rendimiento
+torch.backends.cudnn.benchmark = True
 
 # Clase para convertir diccionarios en objetos con atributos
 class ConfigNamespace:
@@ -42,15 +44,24 @@ def select_model(config, model_name):
 
 # Configurar rutas de salida
 def setup_output_paths(config, model_name):
-    base_path = config["output"]["results_path"]
-    model_path = os.path.join(base_path, model_name)
-    checkpoints_path = os.path.join(model_path, "checkpoints")
-    csv_path = os.path.join(model_path, "metrics.csv")
-    params_csv_path = os.path.join(model_path, "params.csv")
+    try:
+        # Definir rutas base
+        base_path = config["output"]["results_path"]
+        model_path = os.path.join(base_path, model_name)
+        checkpoints_path = os.path.join(model_path, "checkpoints")
+        metrics_path = os.path.join(model_path, "metrics")
+        params_csv_path = os.path.join(model_path, "params.csv")
 
-    os.makedirs(checkpoints_path, exist_ok=True)
+        # Crear directorios si no existen
+        os.makedirs(checkpoints_path, exist_ok=True)
+        os.makedirs(metrics_path, exist_ok=True)
 
-    return checkpoints_path, csv_path, params_csv_path
+        # Ruta de métricas separada para normal y noise
+        metrics_csv_path = os.path.join(metrics_path, "metrics.csv")
+
+        return checkpoints_path, metrics_csv_path, params_csv_path
+    except Exception as e:
+        raise ValueError(f"Error al configurar las rutas de salida. Detalles: {e}")
 
 
 def train(train_loader, model, optimizer, criterion, device, model_name):
@@ -135,10 +146,6 @@ def val(val_loader, model, criterion, device, model_name):
             inputs = inputs.to(device)
             labels = labels.to(device)
 
-            if len(inputs.size()) != 4 or len(labels.size()) != 4:
-                raise ValueError("Las dimensiones de 'inputs' y 'labels' no son correctas. "
-                                 "Se esperaban tensores con 4 dimensiones.")
-
             if model_name == "MCNet":
                 # Procesa todas las bandas para MCNet
                 outputs = model(inputs)
@@ -174,50 +181,76 @@ def val(val_loader, model, criterion, device, model_name):
     return total_loss / len(val_loader)
 
 
-
-
 def save_checkpoint(model, optimizer, checkpoints_path, epoch, data_type="normal"):
 
     #Guarda el checkpoint del modelo con un sufijo que indica el tipo de datos.
 
     try:
+        # Validar el tipo de datos
+        if data_type not in ["normal", "noise"]:
+            raise ValueError(f"data_type inválido: {data_type}. Debe ser 'normal' o 'noise'.")
+
+        # Construir la ruta de salida
         model_out_path = os.path.join(checkpoints_path, f"model_epoch_{epoch}_{data_type}.pth")
         os.makedirs(checkpoints_path, exist_ok=True)
+
+        # Crear el estado del checkpoint
         state = {
             "epoch": epoch,
             "model": model.state_dict(),
             "optimizer": optimizer.state_dict()
         }
+
+        # Guardar el estado
         torch.save(state, model_out_path)
         print(f"Checkpoint guardado: {model_out_path}")
+
     except Exception as e:
-        print(f"Error al guardar el checkpoint en {checkpoints_path}: {e}")
+        print(f"Error al guardar el checkpoint en {checkpoints_path}. Archivo: {model_out_path}")
+        print(f"Detalles del error: {e}")
 
 
 def save_metrics_to_csv(csv_path, loss_values, psnr_values, data_type="normal"):
 
-    #Guarda las métricas en un archivo CSV con un sufijo que indica el tipo de datos.
- 
-    csv_path = f"{os.path.splitext(csv_path)[0]}_{data_type}.csv"  # Agregar tipo de datos al nombre del archivo
-    with open(csv_path, mode='w', newline='') as csv_file:
-        writer = csv.writer(csv_file)
-        writer.writerow(["Epoch", "Loss", "PSNR"])
-        for epoch, (loss, psnr) in enumerate(zip(loss_values, psnr_values), start=1):
-            writer.writerow([epoch, loss, psnr])
-    print(f"Métricas guardadas en: {csv_path}")
+    try:
+        # Validar el tipo de datos
+        if data_type not in ["normal", "noise"]:
+            raise ValueError(f"data_type inválido: {data_type}. Debe ser 'normal' o 'noise'.")
+
+        # Construir la ruta del archivo CSV
+        csv_path_with_type = f"{os.path.splitext(csv_path)[0]}_{data_type}.csv"
+
+        # Escribir los datos en el archivo CSV
+        with open(csv_path_with_type, mode='w', newline='') as csv_file:
+            writer = csv.writer(csv_file)
+            writer.writerow(["Epoch", "Loss", "PSNR"])
+            for epoch, (loss, psnr) in enumerate(zip(loss_values, psnr_values), start=1):
+                writer.writerow([epoch, loss, psnr])
+        
+        print(f"Métricas guardadas en: {csv_path_with_type}")
+    except Exception as e:
+        print(f"Error al guardar las métricas en {csv_path}. Detalles del error: {e}")
+
 
 import matplotlib.pyplot as plt
 
 def load_last_checkpoint(model, optimizer, checkpoints_path, mode=None):
+
     if not os.path.exists(checkpoints_path):
         print(f"No se encontró el directorio de checkpoints: {checkpoints_path}. Iniciando desde el principio.")
         return model, optimizer, 0
 
     # Obtener lista de checkpoints que coincidan con el patrón
     if mode:
-        checkpoint_files = [f for f in os.listdir(checkpoints_path) if f.startswith("model_epoch_") and f.endswith(f"_{mode}.pth")]
+        checkpoint_files = [
+            f for f in os.listdir(checkpoints_path) 
+            if f.startswith("model_epoch_") and f.endswith(f"_{mode}.pth")
+        ]
     else:
-        checkpoint_files = [f for f in os.listdir(checkpoints_path) if f.startswith("model_epoch_")]
+        checkpoint_files = [
+            f for f in os.listdir(checkpoints_path) 
+            if f.startswith("model_epoch_")
+        ]
 
     if not checkpoint_files:
         print(f"No se encontraron checkpoints en {checkpoints_path}. Iniciando desde el principio.")
@@ -227,7 +260,7 @@ def load_last_checkpoint(model, optimizer, checkpoints_path, mode=None):
     try:
         checkpoint_files = sorted(
             checkpoint_files,
-            key=lambda x: int(x.split("_")[2]),  # Extrae el número de época
+            key=lambda x: int(x.split("_")[2])  # Extrae el número de época
         )
     except ValueError as e:
         print(f"Error al procesar nombres de checkpoint: {e}")
@@ -238,9 +271,15 @@ def load_last_checkpoint(model, optimizer, checkpoints_path, mode=None):
         print(f"Cargando el último checkpoint: {last_checkpoint_path}")
         checkpoint = torch.load(last_checkpoint_path)
 
+        # Verificar que el checkpoint contiene las claves esperadas
+        if "model" not in checkpoint or "optimizer" not in checkpoint or "epoch" not in checkpoint:
+            raise ValueError("El archivo de checkpoint no contiene todas las claves necesarias ('model', 'optimizer', 'epoch').")
+
         model.load_state_dict(checkpoint["model"])
         optimizer.load_state_dict(checkpoint["optimizer"])
         start_epoch = checkpoint["epoch"]
+
+        print(f"Checkpoint {mode} cargado correctamente. Comenzando desde la época {start_epoch + 1}.")
         return model, optimizer, start_epoch
     except Exception as e:
         print(f"Error al cargar el checkpoint desde {last_checkpoint_path}: {e}")
@@ -250,17 +289,18 @@ def load_last_checkpoint(model, optimizer, checkpoints_path, mode=None):
 
 
 
+
     
 from scipy.io import savemat  # Importar savemat para guardar imágenes en formato .mat
 from eval import EPI, SSIM, PSNR
 
-def test_model(test_loader, model, model_name, device, test_path):
+def test_model(test_loader, model, model_name, device, test_path, data_type=None):
     model.eval()
     os.makedirs(test_path, exist_ok=True)
 
     # Archivos CSV
-    per_image_csv_path = os.path.join(test_path, "metrics.csv")
-    overall_metrics_csv_path = os.path.join(test_path, "overall_metrics.csv")
+    per_image_csv_path = os.path.join(test_path, f"metrics_{data_type}.csv")
+    overall_metrics_csv_path = os.path.join(test_path, f"overall_metrics_{data_type}.csv")
 
     # Crear encabezados para el archivo de métricas por imagen
     with open(per_image_csv_path, "w", newline="") as per_image_csv:
@@ -271,7 +311,7 @@ def test_model(test_loader, model, model_name, device, test_path):
     overall_metrics = {"PSNR": [], "SSIM": [], "EPI": [], "Time": []}
 
     with torch.no_grad():
-        for batch_idx, batch in enumerate(tqdm(test_loader, desc=f"Testeando {model_name}")):
+        for batch_idx, batch in enumerate(tqdm(test_loader, desc=f"Testeando {model_name} ({data_type})")):
             inputs, labels, filenames = batch[0].to(device), batch[1].to(device), batch[2]
 
             # Predicción
@@ -351,55 +391,10 @@ def test_model(test_loader, model, model_name, device, test_path):
         writer.writerow(["Average EPI", float(np.mean(overall_metrics["EPI"]))])
         writer.writerow(["Average Time (ms)", float(np.mean(overall_metrics["Time"]))])
 
-    print(f"Pruebas completadas para {model_name}. Resultados guardados en {per_image_csv_path} y promedios en {overall_metrics_csv_path}.")
-
-
-
-    # Guardar métricas por imagen en un archivo CSV
-    metrics_csv_path = os.path.join(test_path, "metrics_per_image.csv")
-    with open(metrics_csv_path, "w") as f:
-        f.write("Image,PSNR,SSIM,EPI,Time(ms)\n")
-        for i, filename in enumerate(test_loader.dataset.image_filenames):
-            f.write(f"{os.path.basename(filename)},{overall_metrics['PSNR'][i]},{overall_metrics['SSIM'][i]},{overall_metrics['EPI'][i]},{overall_metrics['Time'][i]}\n")
-    print(f"Métricas por imagen guardadas en {metrics_csv_path}")
-
-    # Guardar promedios de métricas
-    avg_metrics = {
-        "PSNR": np.mean(overall_metrics["PSNR"]),
-        "SSIM": np.mean(overall_metrics["SSIM"]),
-        "EPI": np.mean(overall_metrics["EPI"]),
-        "Time": np.mean(overall_metrics["Time"]),
-    }
-
-    avg_metrics_path = os.path.join(test_path, "average_metrics.json")
-    with open(avg_metrics_path, "w") as metrics_file:
-        json.dump(avg_metrics, metrics_file)
-    print(f"Promedios de métricas guardados en {avg_metrics_path}")
-
-    # Guardar métricas por imagen en un archivo CSV
-    metrics_csv_path = os.path.join(test_path, "metrics_per_image.csv")
-    with open(metrics_csv_path, "w") as f:
-        f.write("Image,PSNR,SSIM,EPI,Time(ms)\n")
-        for i, filename in enumerate(test_loader.dataset.image_filenames):
-            f.write(f"{os.path.basename(filename)},{overall_metrics['PSNR'][i]},{overall_metrics['SSIM'][i]},{overall_metrics['EPI'][i]},{overall_metrics['Time'][i]}\n")
-    print(f"Métricas por imagen guardadas en {metrics_csv_path}")
-
-    # Guardar promedios de métricas
-    avg_metrics = {
-        "PSNR": np.mean(overall_metrics["PSNR"]),
-        "SSIM": np.mean(overall_metrics["SSIM"]),
-        "EPI": np.mean(overall_metrics["EPI"]),
-        "Time": np.mean(overall_metrics["Time"]),
-    }
-
-    avg_metrics_path = os.path.join(test_path, "average_metrics.json")
-    with open(avg_metrics_path, "w") as metrics_file:
-        json.dump(avg_metrics, metrics_file)
-    print(f"Promedios de métricas guardados en {avg_metrics_path}")
-
+    print(f"Pruebas completadas para {model_name} ({data_type}). Resultados guardados en {per_image_csv_path} y {overall_metrics_csv_path}.")
     
     
-def save_model_params_to_csv(params_csv_path, model_name, model):
+def save_model_params_to_csv(params_csv_path, model_name, model, data_type="normal"):
     try:
         # Calcular el total de parámetros y los parámetros entrenables
         total_params = sum(p.numel() for p in model.parameters())
@@ -411,8 +406,8 @@ def save_model_params_to_csv(params_csv_path, model_name, model):
             writer = csv.writer(csv_file)
             # Escribir el encabezado solo si el archivo no existe
             if not file_exists:
-                writer.writerow(["Model Name", "Total Parameters", "Trainable Parameters"])
-            writer.writerow([model_name, total_params, trainable_params])
+                writer.writerow(["Model Name", "Data Type", "Total Parameters", "Trainable Parameters"])
+            writer.writerow([model_name, data_type, total_params, trainable_params])
         print(f"Parámetros del modelo guardados en: {params_csv_path}")
     except Exception as e:
         print(f"Error al guardar los parámetros del modelo en {params_csv_path}: {e}")
@@ -441,13 +436,12 @@ def main():
         for model_name in config["model_list"]:
             print(f"Iniciando entrenamiento para el modelo: {model_name}")
 
-            # Crear datasets y DataLoaders para imágenes normales
+            # Crear datasets y DataLoaders para imágenes normales y con ruido
             train_normal_dataset = TrainsetFromFolder(config["training"]["train_data"]["normal"], config["database"]["image_bands"])
             train_normal_loader = DataLoader(
                 train_normal_dataset, batch_size=config["training"]["batch_size"], shuffle=True, pin_memory=True
             )
 
-            # Crear datasets y DataLoaders para imágenes con ruido
             train_noise_dataset = TrainsetFromFolder(config["training"]["train_data"]["noise"], config["database"]["image_bands"])
             train_noise_loader = DataLoader(
                 train_noise_dataset, batch_size=config["training"]["batch_size"], shuffle=True, pin_memory=True
@@ -457,8 +451,11 @@ def main():
             val_dataset = ValsetFromFolder(config["training"]["val_data"]["normal"], config["database"]["image_bands"])
             val_loader = DataLoader(val_dataset, batch_size=config["training"]["batch_size"], shuffle=False, pin_memory=True)
 
-            test_dataset = TestsetFromFolder(config["test"]["test_data"]["normal"], config["database"]["image_bands"])
-            test_loader = DataLoader(test_dataset, batch_size=config["training"]["batch_size"], shuffle=False, pin_memory=True)
+            test_dataset_normal = TestsetFromFolder(config["test"]["test_data"]["normal"], config["database"]["image_bands"])
+            test_loader_normal = DataLoader(test_dataset_normal, batch_size=config["training"]["batch_size"], shuffle=False, pin_memory=True)
+
+            test_dataset_noise = TestsetFromFolder_Noisy(config["test"]["test_data"]["noise"], config["database"]["image_bands"])
+            test_loader_noise = DataLoader(test_dataset_noise, batch_size=config["training"]["batch_size"], shuffle=False, pin_memory=True)
 
             # Selección y configuración del modelo
             model = select_model(config, model_name)
@@ -475,25 +472,25 @@ def main():
 
             # Configuración de paths para guardar resultados
             checkpoints_path, csv_path, params_csv_path = setup_output_paths(config, model_name)
-            test_path = os.path.join(config["output"]["results_path"], model_name, "test_results")
-            val_test_path = os.path.join(config["output"]["results_path"], model_name, "val_test_results")
-            os.makedirs(test_path, exist_ok=True)
-            os.makedirs(val_test_path, exist_ok=True)
+            test_path_normal = os.path.join(config["output"]["results_path"], model_name, "test_results_normal")
+            test_path_noise = os.path.join(config["output"]["results_path"], model_name, "test_results_noise")
+            os.makedirs(test_path_normal, exist_ok=True)
+            os.makedirs(test_path_noise, exist_ok=True)
 
             # Guardar parámetros del modelo
-            save_model_params_to_csv(params_csv_path, model_name, model)
+            save_model_params_to_csv(params_csv_path, model_name, model, data_type="normal")
 
-            # Cargar checkpoint
-            model, optimizer, start_epoch = load_last_checkpoint(model, optimizer, checkpoints_path)
+            # Cargar último checkpoint
+            model, optimizer, start_epoch_normal = load_last_checkpoint(model, optimizer, checkpoints_path, mode="normal")
+            model, optimizer, start_epoch_noise = load_last_checkpoint(model, optimizer, checkpoints_path, mode="noise")
 
-            # Entrenamiento con imágenes normales y luego con imágenes con ruido
-            if start_epoch < config["training"]["epochs"]:
-                train_loss_values = []
-                val_loss_values = []
+            # Entrenamiento con imágenes normales
+            if start_epoch_normal < config["training"]["epochs"] // 2:
+                train_loss_values_normal = []
+                val_loss_values_normal = []
 
-                # Entrenamiento con imágenes normales
                 print(f"Iniciando entrenamiento con imágenes normales para modelo {model_name}...")
-                for epoch in range(start_epoch + 1, config["training"]["epochs"] // 2 + 1):
+                for epoch in range(start_epoch_normal + 1, config["training"]["epochs"] // 2 + 1):
                     print(f"Epoch {epoch}/{config['training']['epochs']} (imágenes normales) para modelo {model_name}")
 
                     # Entrenamiento
@@ -504,15 +501,22 @@ def main():
                     val_loss = val(val_loader, model, criterion, device, model_name)
                     print(f"Validation Loss (imágenes normales): {val_loss}")
 
-                    train_loss_values.append(train_loss)
-                    val_loss_values.append(val_loss)
+                    train_loss_values_normal.append(train_loss)
+                    val_loss_values_normal.append(val_loss)
 
                     # Guardar checkpoint
                     save_checkpoint(model, optimizer, checkpoints_path, epoch, "normal")
 
-                # Entrenamiento con imágenes con ruido
+                # Guardar métricas de entrenamiento y validación para normales
+                save_metrics_to_csv(csv_path, train_loss_values_normal, val_loss_values_normal, "normal")
+
+            # Entrenamiento con imágenes con ruido
+            if start_epoch_noise < config["training"]["epochs"]:
+                train_loss_values_noise = []
+                val_loss_values_noise = []
+
                 print(f"Iniciando entrenamiento con imágenes con ruido para modelo {model_name}...")
-                for epoch in range(config["training"]["epochs"] // 2 + 1, config["training"]["epochs"] + 1):
+                for epoch in range(start_epoch_noise + 1, config["training"]["epochs"] + 1):
                     print(f"Epoch {epoch}/{config['training']['epochs']} (imágenes con ruido) para modelo {model_name}")
 
                     # Entrenamiento
@@ -523,20 +527,26 @@ def main():
                     val_loss = val(val_loader, model, criterion, device, model_name)
                     print(f"Validation Loss (imágenes con ruido): {val_loss}")
 
-                    train_loss_values.append(train_loss)
-                    val_loss_values.append(val_loss)
+                    train_loss_values_noise.append(train_loss)
+                    val_loss_values_noise.append(val_loss)
 
                     # Guardar checkpoint
                     save_checkpoint(model, optimizer, checkpoints_path, epoch, "noise")
 
-                # Guardar métricas de entrenamiento y validación
-                save_metrics_to_csv(csv_path, train_loss_values, val_loss_values)
+                # Guardar métricas de entrenamiento y validación para ruido
+                save_metrics_to_csv(csv_path, train_loss_values_noise, val_loss_values_noise, "noise")
 
             # Evaluación en conjunto de prueba
-            print(f"Iniciando evaluación en el conjunto de prueba para modelo {model_name}...")
-            test_model(test_loader, model, model_name, device, test_path)
+            print(f"Iniciando evaluación en el conjunto de prueba para modelo {model_name} (normal)...")
+            test_model(test_loader_normal, model, model_name, device, test_path_normal)
+
+            print(f"Iniciando evaluación en el conjunto de prueba para modelo {model_name} (noise)...")
+            test_model(test_loader_noise, model, model_name, device, test_path_noise)
 
             print(f"Entrenamiento y evaluación completados para el modelo: {model_name}")
+
+    except Exception as e:
+        print(f"Error durante la ejecución: {e}")
 
 
     except Exception as e:

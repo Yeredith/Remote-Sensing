@@ -42,11 +42,11 @@
         },
         "Propuesto": {
         "upscale_factor": 4,
-        "n_feats": 16,
+        "n_feats": 32,
         "n_module": 4,
         "n_conv": 1,  
         "cross_attention": {
-            "query_key_reduction": 32
+            "query_key_reduction": 16
         },
         "denoising_block": {
             "kernel_size": 2,
@@ -60,7 +60,7 @@
     }
 
     },
-    "model_list": ["SFCSR", "MCNet", "Propuesto"],
+    "model_list": ["SFCSR","MCNet","Propuesto"],
     "test": {
         "test_data": {
             "normal": "F:/Remote Sensing/Data/Test/Normal/4",
