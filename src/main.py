@@ -286,11 +286,6 @@ def load_last_checkpoint(model, optimizer, checkpoints_path, mode=None):
         return model, optimizer, 0
 
 
-
-
-
-
-    
 from scipy.io import savemat  # Importar savemat para guardar imágenes en formato .mat
 from eval import EPI, SSIM, PSNR
 

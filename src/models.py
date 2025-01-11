@@ -453,3 +453,8 @@ class Propuesto(nn.Module):
 
         return out
 
+############################################
+###############PROPUESTO 2##################
+############################################
+#MEZCLA DE ATTENTION Y 3D CONV EN MÓDULOS
+
