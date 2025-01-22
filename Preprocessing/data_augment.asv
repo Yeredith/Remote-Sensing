@@ -6,5 +6,6 @@ function [outputArg1,outputArg2] = data_augment(label, upscale_factor, savePath,
     lr = single(lr);
     hr = single(hr);
     save([savePath,count_name,'.mat'],'lr','hr'); % save augmented hyperspectral image to "savePath"
+   
 end
 

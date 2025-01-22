@@ -11,7 +11,7 @@ import json
 import csv
 import numpy as np
 from data_utils import TrainsetFromFolder, ValsetFromFolder, TestsetFromFolder, TestsetFromFolder_Noisy
-from models import SFCSR, MCNet,Propuesto
+from models import SFCSR, MCNet, Propuesto , Propuesto2, Modificacion1, Modificacion2
 from scipy.io import savemat
 
 # Configuración de CuDNN para un mejor rendimiento
@@ -38,6 +38,12 @@ def select_model(config, model_name):
     if model_name == "MCNet":
         return MCNet(model_config)
     if model_name == "Propuesto":
+        return MCNet(model_config)
+    if model_name == "Propuesto2":
+        return MCNet(model_config)
+    if model_name == "Modificacion1":
+        return MCNet(model_config)
+    if model_name == "Modificacion2":
         return MCNet(model_config)
     else:
         raise ValueError(f"Modelo no reconocido: {model_name}")
@@ -210,8 +216,7 @@ def save_checkpoint(model, optimizer, checkpoints_path, epoch, data_type="normal
         print(f"Detalles del error: {e}")
 
 
-def save_metrics_to_csv(csv_path, loss_values, psnr_values, data_type="normal"):
-
+def save_metrics_to_csv(csv_path, loss_values, val_loss_values, data_type="normal"):
     try:
         # Validar el tipo de datos
         if data_type not in ["normal", "noise"]:
@@ -220,36 +225,47 @@ def save_metrics_to_csv(csv_path, loss_values, psnr_values, data_type="normal"):
         # Construir la ruta del archivo CSV
         csv_path_with_type = f"{os.path.splitext(csv_path)[0]}_{data_type}.csv"
 
-        # Escribir los datos en el archivo CSV
-        with open(csv_path_with_type, mode='w', newline='') as csv_file:
+        # Determinar el modo de apertura (append si existe, write si no existe)
+        file_exists = os.path.exists(csv_path_with_type)
+        mode = 'a' if file_exists else 'w'
+
+        # Escribir las métricas en el archivo CSV
+        with open(csv_path_with_type, mode=mode, newline='') as csv_file:
             writer = csv.writer(csv_file)
-            writer.writerow(["Epoch", "Loss", "PSNR"])
-            for epoch, (loss, psnr) in enumerate(zip(loss_values, psnr_values), start=1):
-                writer.writerow([epoch, loss, psnr])
-        
+
+            # Escribir encabezado solo si el archivo no existe
+            if not file_exists:
+                writer.writerow(["Epoch", "Train Loss", "Validation Loss"])
+
+            # Escribir las métricas por época
+            for epoch, (train_loss, val_loss) in enumerate(zip(loss_values, val_loss_values), start=1):
+                writer.writerow([epoch, train_loss, val_loss])
+
         print(f"Métricas guardadas en: {csv_path_with_type}")
     except Exception as e:
-        print(f"Error al guardar las métricas en {csv_path}. Detalles del error: {e}")
+        print(f"Error al guardar las métricas en {csv_path_with_type}. Detalles del error: {e}")
+
+
 
 
 import matplotlib.pyplot as plt
 
-def load_last_checkpoint(model, optimizer, checkpoints_path, mode=None):
+def load_last_checkpoint(model, optimizer, checkpoints_path, mode):
 
     if not os.path.exists(checkpoints_path):
         print(f"No se encontró el directorio de checkpoints: {checkpoints_path}. Iniciando desde el principio.")
         return model, optimizer, 0
 
     # Obtener lista de checkpoints que coincidan con el patrón
-    if mode:
+    if mode == 'normal':
         checkpoint_files = [
             f for f in os.listdir(checkpoints_path) 
             if f.startswith("model_epoch_") and f.endswith(f"_{mode}.pth")
         ]
-    else:
-        checkpoint_files = [
+    elif mode == 'noise':
+         checkpoint_files = [
             f for f in os.listdir(checkpoints_path) 
-            if f.startswith("model_epoch_")
+            if f.startswith("model_epoch_") and f.endswith(f"_{mode}.pth")
         ]
 
     if not checkpoint_files:
@@ -480,12 +496,12 @@ def main():
             model, optimizer, start_epoch_noise = load_last_checkpoint(model, optimizer, checkpoints_path, mode="noise")
 
             # Entrenamiento con imágenes normales
-            if start_epoch_normal < config["training"]["epochs"] // 2:
+            if start_epoch_normal < config["training"]["epochs"]:
                 train_loss_values_normal = []
                 val_loss_values_normal = []
 
                 print(f"Iniciando entrenamiento con imágenes normales para modelo {model_name}...")
-                for epoch in range(start_epoch_normal + 1, config["training"]["epochs"] // 2 + 1):
+                for epoch in range(start_epoch_normal + 1, config["training"]["epochs"] + 1):
                     print(f"Epoch {epoch}/{config['training']['epochs']} (imágenes normales) para modelo {model_name}")
 
                     # Entrenamiento
@@ -496,14 +512,15 @@ def main():
                     val_loss = val(val_loader, model, criterion, device, model_name)
                     print(f"Validation Loss (imágenes normales): {val_loss}")
 
+                    # Guardar métricas en listas
                     train_loss_values_normal.append(train_loss)
                     val_loss_values_normal.append(val_loss)
 
                     # Guardar checkpoint
                     save_checkpoint(model, optimizer, checkpoints_path, epoch, "normal")
 
-                # Guardar métricas de entrenamiento y validación para normales
-                save_metrics_to_csv(csv_path, train_loss_values_normal, val_loss_values_normal, "normal")
+                    # Guardar métricas en CSV
+                    save_metrics_to_csv(csv_path, [train_loss], [val_loss], "normal")
 
             # Entrenamiento con imágenes con ruido
             if start_epoch_noise < config["training"]["epochs"]:
@@ -522,14 +539,16 @@ def main():
                     val_loss = val(val_loader, model, criterion, device, model_name)
                     print(f"Validation Loss (imágenes con ruido): {val_loss}")
 
+                    # Guardar métricas en listas
                     train_loss_values_noise.append(train_loss)
                     val_loss_values_noise.append(val_loss)
 
                     # Guardar checkpoint
                     save_checkpoint(model, optimizer, checkpoints_path, epoch, "noise")
 
-                # Guardar métricas de entrenamiento y validación para ruido
-                save_metrics_to_csv(csv_path, train_loss_values_noise, val_loss_values_noise, "noise")
+                    # Guardar métricas en CSV
+                    save_metrics_to_csv(csv_path, [train_loss], [val_loss], "noise")
+
 
             # Evaluación en conjunto de prueba
             print(f"Iniciando evaluación en el conjunto de prueba para modelo {model_name} (normal)...")

@@ -1,4 +1,7 @@
 
+###########################
+           #SFCSR
+###########################
 #Modificado para 3 canales
 import torch
 import torch.nn as nn
@@ -452,9 +455,284 @@ class Propuesto(nn.Module):
         out = self.tail(combined_feat)
 
         return out
+    
+############################
+# Modificacion 1
+# - Eliminar CrossChannelAttention y combinar directamente las características de los canales después de los bloques de atención.
+############################
+
+class Modificacion1(nn.Module):
+    def __init__(self, args):
+        super(Modificacion1, self).__init__()
+
+        upscale_factor = int(args.upscale_factor)
+        n_feats = args.n_feats
+
+        wn = lambda x: nn.utils.weight_norm(x)
+
+        # Cabezas para procesar canales RGB
+        self.R_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+        self.G_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+        self.B_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+
+        # Bloques de Denoising
+        self.R_denoising = DenoisingBlock(n_feats)
+        self.G_denoising = DenoisingBlock(n_feats)
+        self.B_denoising = DenoisingBlock(n_feats)
+
+        # Bloques de Atención
+        self.R_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        self.G_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        self.B_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+
+        # Reconstrucción
+        self.tail = nn.Sequential(
+            nn.Conv2d(n_feats, n_feats * (upscale_factor ** 2), kernel_size=3, stride=1, padding=1),
+            nn.PixelShuffle(upscale_factor),
+            nn.Conv2d(n_feats, 3, kernel_size=3, stride=1, padding=1)
+        )
+
+    def forward(self, x):
+        # Separar canales RGB
+        r, g, b = x[:, 0:1, :, :], x[:, 1:2, :, :], x[:, 2:3, :, :]
+
+        # Procesar cada canal por separado
+        r_feat = self.R_head(r)
+        g_feat = self.G_head(g)
+        b_feat = self.B_head(b)
+
+        r_feat = self.R_denoising(r_feat)
+        g_feat = self.R_attention(r_feat)
+
+        g_feat = self.G_denoising(g_feat)
+        g_feat = self.G_attention(g_feat)
+
+        b_feat = self.B_denoising(b_feat)
+        b_feat = self.B_attention(b_feat)
+
+        # Combinar características y reconstruir
+        combined_feat = r_feat + g_feat + b_feat
+        out = self.tail(combined_feat)
+
+        return out
+
+############################
+# Modificacion 2
+# - Eliminar DenoisingBlock para cada canal.
+############################
+
+class Modificacion2(nn.Module):
+    def __init__(self, args):
+        super(Modificacion2, self).__init__()
+
+        upscale_factor = int(args.upscale_factor)
+        n_feats = args.n_feats
+        reduction = args.cross_attention.get("query_key_reduction", 8)
+
+        wn = lambda x: nn.utils.weight_norm(x)
+
+        # Cabezas para procesar canales RGB
+        self.R_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+        self.G_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+        self.B_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+
+        # Bloques de Atención
+        self.R_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        self.G_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        self.B_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+
+        # Atención Cruzada
+        self.cross_attention = CrossChannelAttention(n_feats, reduction)
+
+        # Reconstrucción
+        self.tail = nn.Sequential(
+            nn.Conv2d(n_feats, n_feats * (upscale_factor ** 2), kernel_size=3, stride=1, padding=1),
+            nn.PixelShuffle(upscale_factor),
+            nn.Conv2d(n_feats, 3, kernel_size=3, stride=1, padding=1)
+        )
+
+    def forward(self, x):
+        # Separar canales RGB
+        r, g, b = x[:, 0:1, :, :], x[:, 1:2, :, :], x[:, 2:3, :, :]
+
+        # Procesar cada canal por separado
+        r_feat = self.R_head(r)
+        g_feat = self.G_head(g)
+        b_feat = self.B_head(b)
+
+        r_feat = self.R_attention(r_feat)
+        g_feat = self.G_attention(g_feat)
+        b_feat = self.B_attention(b_feat)
+
+        # Aplicar Atención Cruzada
+        r_feat, g_feat, b_feat = self.cross_attention(r_feat, g_feat, b_feat)
+
+        # Combinar características y reconstruir
+        combined_feat = r_feat + g_feat + b_feat
+        out = self.tail(combined_feat)
+
+        return out
+
+
 
 ############################################
-###############PROPUESTO 2##################
+###############PROPUESTO 3##################
+# Propuesta 3:
+# - Introducción de bloques con convoluciones 3D y bloques de atención.
 ############################################
 #MEZCLA DE ATTENTION Y 3D CONV EN MÓDULOS
+"""
+class BasicConv3d_P2(nn.Module):
+    def __init__(self, wn, in_channel, out_channel, kernel_size, stride, padding=(0,0,0)):
+        super(BasicConv3d_P2, self).__init__()
 
+        self.conv = wn(
+            nn.Conv3d(in_channel, out_channel,
+                      kernel_size=kernel_size, stride=stride,
+                      padding=padding)
+        )
+        self.relu = nn.ReLU(inplace=False)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.relu(x)
+        return x
+
+class AttentionBlock_P2(nn.Module):
+    def __init__(self, n_feats):
+        super(AttentionBlock_P2, self).__init__()
+        self.query = nn.Conv2d(n_feats, n_feats // 8, kernel_size=1)
+        self.key = nn.Conv2d(n_feats, n_feats // 8, kernel_size=1)
+        self.value = nn.Conv2d(n_feats, n_feats, kernel_size=1)
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        B, C, H, W = x.size()
+        query = self.query(x).view(B, -1, H * W).permute(0, 2, 1)
+        key = self.key(x).view(B, -1, H * W)
+        value = self.value(x).view(B, -1, H * W)
+
+        attention = self.softmax(torch.bmm(query, key))
+        out = torch.bmm(value, attention.permute(0, 2, 1)).view(B, C, H, W)
+
+        return x + out
+
+class Block_P2(nn.Module):
+    def __init__(self, wn, n_feats):
+        super(Block_P2, self).__init__()
+        self.conv3d = BasicConv3d_P2(wn, n_feats, n_feats, kernel_size=(1,3,3), stride=1, padding=(0,1,1))
+        self.attention = AttentionBlock_P2(n_feats)
+
+    def forward(self, x):
+        x = self.conv3d(x)
+        x = self.attention(x)
+        return x
+
+class Propuesto3(nn.Module):
+    def __init__(self, args):
+        super(Propuesto3, self).__init__()
+        n_feats = args.n_feats
+        wn = lambda x: nn.utils.weight_norm(x)
+
+        self.head = nn.Conv2d(3, n_feats, kernel_size=3, padding=1)
+
+        self.block1 = Block_P2(wn, n_feats)
+        self.block2 = Block_P2(wn, n_feats)
+
+        self.tail = nn.Sequential(
+            nn.Conv2d(n_feats, 3, kernel_size=3, padding=1)
+        )
+
+    def forward(self, x):
+        x = self.head(x)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.tail(x)
+        return x
+
+
+"""
+
+class DenoisingBlock2(nn.Module):
+    def __init__(self, n_feats):
+        super(DenoisingBlock2, self).__init__()
+        self.conv1 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1)
+        self.norm1 = nn.BatchNorm2d(n_feats)
+        self.act1 = nn.ReLU(inplace=True)
+
+        self.conv2 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1)
+        self.norm2 = nn.BatchNorm2d(n_feats)
+
+        # Atención ligera para priorizar regiones clave
+        self.attention = nn.Sequential(
+            nn.Conv2d(n_feats, n_feats // 8, kernel_size=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(n_feats // 8, n_feats, kernel_size=1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        residual = x
+        x = self.act1(self.norm1(self.conv1(x)))
+        x = self.norm2(self.conv2(x))
+        x = x * self.attention(x)  # Aplicar atención
+        return x + residual
+    
+
+class Propuesto2(nn.Module):
+    def __init__(self, args):
+        super(Propuesto2, self).__init__()
+        
+        upscale_factor = int(args.upscale_factor)
+        n_feats = args.n_feats
+        
+        wn = lambda x: nn.utils.weight_norm(x)
+
+        # Cabezas para procesar canales RGB
+        self.R_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+        self.G_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+        self.B_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
+
+        # Bloques de Denoising adaptados
+        self.R_denoising = DenoisingBlock(n_feats)
+        self.G_denoising = DenoisingBlock(n_feats)
+        self.B_denoising = DenoisingBlock(n_feats)
+
+        # Bloques de Atención
+        self.R_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        self.G_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        self.B_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+
+        # Reconstrucción
+        self.tail = nn.Sequential(
+            nn.Conv2d(n_feats, n_feats * (upscale_factor ** 2), kernel_size=3, stride=1, padding=1),
+            nn.PixelShuffle(upscale_factor),
+            nn.Conv2d(n_feats, 3, kernel_size=3, stride=1, padding=1)
+        )
+
+    def forward(self, x):
+        # Separar canales RGB
+        r, g, b = x[:, 0:1, :, :], x[:, 1:2, :, :], x[:, 2:3, :, :]
+
+        # Procesar cada canal por separado
+        r_feat = self.R_head(r)
+        g_feat = self.G_head(g)
+        b_feat = self.B_head(b)
+
+        # Aplicar denoising primero
+        r_feat = self.R_denoising(r_feat)
+        g_feat = self.G_denoising(g_feat)
+        b_feat = self.B_denoising(b_feat)
+
+        # Aplicar atención después del denoising
+        r_feat = self.R_attention(r_feat)
+        g_feat = self.G_attention(g_feat)
+        b_feat = self.B_attention(b_feat)
+
+        # Combinar características directamente
+        combined_feat = r_feat + g_feat + b_feat
+
+        # Reconstrucción
+        out = self.tail(combined_feat)
+
+        return out

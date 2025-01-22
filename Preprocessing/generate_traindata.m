@@ -4,7 +4,7 @@ clc;
 
 %% Definir hiperparámetros
 patchSize = 32;            % Tamaño del parche
-randomNumber = 10;         % Número de parches aleatorios
+randomNumber = 2;         % Número de parches aleatorios
 upscale_factor = 4;        % Factor de aumento
 data_type = 'RS/normal';          % Nombre del tipo de datos
 imagePatch = patchSize * upscale_factor;
@@ -16,7 +16,7 @@ dataFolder = fullfile(currentFolder, 'Data');
 if ~exist(dataFolder, 'dir')
     mkdir(dataFolder);
 end
-trainFolder = fullfile(dataFolder, 'Validation');
+trainFolder = fullfile(dataFolder, 'Train');
 if ~exist(trainFolder, 'dir')
     mkdir(trainFolder);
 end
@@ -31,12 +31,12 @@ end
 savePath = scaleFolder;
 
 %% Ruta de datos fuente
-srPath = 'F:/SR-RS/train_data/train_data/HR';  % Ruta de las imágenes RGB
+srPath = 'F:/Remote Sensing/Train_HR_data';  % Ruta de las imágenes RGB
 srFile = fullfile(srPath, '/');
 srdirOutput = dir(fullfile(srFile, '*.jpg'));  % Asumiendo que las imágenes son .png
 srfileNames = {srdirOutput.name}';
 number = length(srfileNames);  % Número total de imágenes en la carpeta
-
+count = 1;
 %% Loop a través de todas las imágenes
 for index = 1:3237
     name = char(srfileNames(index));  % Obtener el nombre de la imagen
@@ -68,28 +68,28 @@ for index = 1:3237
         newt = imresize(t, scales(sc));  % Redimensionar la imagen
         x_random = randperm(size(newt, 1) - imagePatch, randomNumber);
         y_random = randperm(size(newt, 2) - imagePatch, randomNumber);
-
+        
         for j = 1:randomNumber
             hrImage = newt(x_random(j):x_random(j) + imagePatch - 1, y_random(j):y_random(j) + imagePatch - 1, :);
-
             label = hrImage;   
-            data_augment(label, upscale_factor, savePath);  % Guardar imagen original
+            data_augment(label, upscale_factor, savePath,count);  % Guardar imagen original
 
             % Rotaciones y flip
             label = imrotate(hrImage, 180);  
-            data_augment(label, upscale_factor, savePath);
-
-            label = imrotate(hrImage, 90);
-            data_augment(label, upscale_factor, savePath);
+            data_augment(label, upscale_factor, savePath,count);
+            % 
+            % label = imrotate(hrImage, 90);
+            % data_augment(label, upscale_factor, savePath);
 
             % label = imrotate(hrImage, 270);
             % data_augment(label, upscale_factor, savePath);
 
             label = flipdim(hrImage, 1);
-            data_augment(label, upscale_factor, savePath);
-
-            label = flipdim(hrImage, 2);
-            data_augment(label, upscale_factor, savePath);
+            data_augment(label, upscale_factor, savePath,count);
+            % 
+            % label = flipdim(hrImage, 2);
+            % data_augment(label, upscale_factor, savePath);
+            count = count + 1;
         end
         clear x_random;
         clear y_random;
@@ -104,7 +104,7 @@ clc;
 
 %% Definir hiperparámetros
 patchSize = 32;            % Tamaño del parche
-randomNumber = 10;         % Número de parches aleatorios
+randomNumber = 2;         % Número de parches aleatorios
 upscale_factor = 4;        % Factor de aumento
 data_type = 'RS/noise';          % Nombre del tipo de datos
 imagePatch = patchSize * upscale_factor;
@@ -117,7 +117,7 @@ dataFolder = fullfile(currentFolder, 'Data');
 if ~exist(dataFolder, 'dir')
     mkdir(dataFolder);
 end
-trainFolder = fullfile(dataFolder, 'Validation');
+trainFolder = fullfile(dataFolder, 'Train');
 if ~exist(trainFolder, 'dir')
     mkdir(trainFolder);
 end
@@ -132,12 +132,12 @@ end
 savePath = scaleFolder;
 
 %% Ruta de datos fuente
-srPath = 'F:/SR-RS/train_data/train_data/HR';  % Ruta de las imágenes RGB
+srPath = 'F:/Remote Sensing/Train_HR_data';  % Ruta de las imágenes RGB
 srFile = fullfile(srPath, '/');
 srdirOutput = dir(fullfile(srFile, '*.jpg'));  % Asumiendo que las imágenes son .jpg
 srfileNames = {srdirOutput.name}';
 number = length(srfileNames);  % Número total de imágenes en la carpeta
-
+count = 1;
 %% Loop a través de todas las imágenes
 for index = 1:3237
     name = char(srfileNames(index));  % Obtener el nombre de la imagen
@@ -171,7 +171,7 @@ for index = 1:3237
         % Generar posiciones aleatorias para los parches
         x_random = randi([1, size(newt, 1) - imagePatch + 1], [randomNumber, 1]);
         y_random = randi([1, size(newt, 2) - imagePatch + 1], [randomNumber, 1]);
-
+       
         for j = 1:randomNumber
             % Extraer el parche de alta resolución (HR)
             hrImage = newt(x_random(j):x_random(j) + imagePatch - 1, y_random(j):y_random(j) + imagePatch - 1, :);
@@ -180,16 +180,16 @@ for index = 1:3237
             noisyImage = addNoiseWithSNR(hrImage, noise);
 
             % Guardar imagen original con ruido
-            data_augment(noisyImage, upscale_factor, savePath);
+            data_augment(noisyImage, upscale_factor, savePath,count);
 
             % Rotaciones y flips
             label = imrotate(hrImage, 180);
             noisyLabel = addNoiseWithSNR(label, 17);
-            data_augment(noisyLabel, upscale_factor, savePath);
-
-            label = imrotate(hrImage, 90);
-            noisyLabel = addNoiseWithSNR(label, 17);
-            data_augment(noisyLabel, upscale_factor, savePath);
+            data_augment(noisyLabel, upscale_factor, savePath,count);
+            % 
+            % label = imrotate(hrImage, 90);
+            % noisyLabel = addNoiseWithSNR(label, 17);
+            % data_augment(noisyLabel, upscale_factor, savePath);
 
             % label = imrotate(hrImage, 270);
             % noisyLabel = addNoiseWithSNR(label, 17);
@@ -197,11 +197,12 @@ for index = 1:3237
 
             label = flipdim(hrImage, 1);
             noisyLabel = addNoiseWithSNR(label, 17);
-            data_augment(noisyLabel, upscale_factor, savePath);
+            data_augment(noisyLabel, upscale_factor, savePath,count);
 
-            label = flipdim(hrImage, 2);
-            noisyLabel = addNoiseWithSNR(label, 17);
-            data_augment(noisyLabel, upscale_factor, savePath);
+            % label = flipdim(hrImage, 2);
+            % noisyLabel = addNoiseWithSNR(label, 17);
+            % data_augment(noisyLabel, upscale_factor, savePath);
+            count = count + 1;
         end
         clear x_random;
         clear y_random;
