@@ -256,7 +256,7 @@ def load_last_checkpoint(model, optimizer, checkpoints_path, mode):
         print(f"No se encontró el directorio de checkpoints: {checkpoints_path}. Iniciando desde el principio.")
         return model, optimizer, 0
 
-    # Obtener lista de checkpoints que coincidan con el patrón
+    # Obtener lista de checkpoints que coincidan 
     if mode == 'normal':
         checkpoint_files = [
             f for f in os.listdir(checkpoints_path) 

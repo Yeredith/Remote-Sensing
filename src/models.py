@@ -260,10 +260,9 @@ class MCNet(nn.Module):
         n_conv     = args.n_conv          # 1
         kernel_size= 3
 
-        # band_mean si deseas, ajustado a 3 bandas:
-        # band_mean = (0.485, 0.456, 0.406) # p.e. en RGB normal
-        # O conserva tu original si no te importa
-        band_mean = (0.0939, 0.0950, 0.0869)  # Ejemplo ficticio con 3 bandas
+        
+        # band_mean = (0.485, 0.456, 0.406) 
+        band_mean = (0.0939, 0.0950, 0.0869)  
         wn = lambda x: torch.nn.utils.weight_norm(x)
 
         # Ajustar band_mean a 3 bandas
