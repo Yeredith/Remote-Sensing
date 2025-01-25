@@ -14,16 +14,6 @@ def augment_patches(hr_patch, lr_patch):
     lr_90 = np.rot90(lr_patch, k=1, axes=(0, 1))
     yield hr_90, lr_90
 
-    # Rotar 180
-    hr_180 = np.rot90(hr_patch, k=2, axes=(0, 1))
-    lr_180 = np.rot90(lr_patch, k=2, axes=(0, 1))
-    yield hr_180, lr_180
-
-    # Rotar 270
-    hr_270 = np.rot90(hr_patch, k=3, axes=(0, 1))
-    lr_270 = np.rot90(lr_patch, k=3, axes=(0, 1))
-    yield hr_270, lr_270
-
     # Flip vertical
     hr_flipud = np.flipud(hr_patch)
     lr_flipud = np.flipud(lr_patch)
@@ -240,7 +230,7 @@ if __name__ == "__main__":
         save_path=save_path_train_normal,
         patch_size_hr=128,
         patch_size_lr=32,
-        random_number=16,
+        random_number=4,
         scale=4,
         start_index=1,
         end_index=3237,
@@ -253,10 +243,11 @@ if __name__ == "__main__":
         save_path=save_path_train_noise,
         patch_size_hr=128,
         patch_size_lr=32,
-        random_number=16,
+        random_number=4,
         scale=4,
         snr=17,
         start_index=1,
         end_index=3237,
         batch_size=500
     )
+
