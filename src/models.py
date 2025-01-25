@@ -537,7 +537,7 @@ class Modificacion2(nn.Module):
 
         upscale_factor = int(args.upscale_factor)
         n_feats = args.n_feats
-        reduction = args.cross_attention.get("query_key_reduction", 16)  # Reducción aumentada para ahorro de memoria
+        reduction = args.cross_attention.get("query_key_reduction", 16) 
 
         wn = lambda x: nn.utils.weight_norm(x)
 

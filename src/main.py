@@ -279,6 +279,8 @@ def load_last_checkpoint(model, optimizer, checkpoints_path, mode):
 from scipy.io import savemat  # Importar savemat para guardar imágenes en formato .mat
 from eval import EPI, SSIM, PSNR
 
+from torch.cuda.amp import autocast
+
 def test_model(test_loader, model, model_name, device, test_path, data_type=None):
     model.eval()
     os.makedirs(test_path, exist_ok=True)
@@ -295,80 +297,92 @@ def test_model(test_loader, model, model_name, device, test_path, data_type=None
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc=f"Testeando {model_name} ({data_type})")):
-            # batch -> (inputs, labels, filenames)
-            # inputs, labels tienen forma (B, C, H, W) y filenames es una lista de strings
             inputs, labels, filenames = batch[0].to(device), batch[1].to(device), batch[2]
 
-            # Medimos tiempo de inferencia por batch
-            start_time = torch.cuda.Event(enable_timing=True)
-            end_time = torch.cuda.Event(enable_timing=True)
-            start_time.record()
+            sub_batch_size = 1  # Procesar una imagen a la vez
+            total_samples = inputs.size(0)
 
-            # Forward
-            outputs = model(inputs)
+            for start_idx in range(0, total_samples, sub_batch_size):
+                end_idx = min(start_idx + sub_batch_size, total_samples)
 
-            end_time.record()
-            torch.cuda.synchronize()  # Para medir correctamente el tiempo GPU
-            elapsed_time = start_time.elapsed_time(end_time)
+                # Extraer sub-batch
+                sub_inputs = inputs[start_idx:end_idx]
+                sub_labels = labels[start_idx:end_idx]
+                sub_filenames = filenames[start_idx:end_idx]
 
-            # Convertimos la salida y label a numpy en (B, H, W, C)
-            outputs_np = outputs.cpu().numpy().transpose(0, 2, 3, 1)  # de (B,C,H,W) a (B,H,W,C)
-            labels_np = labels.cpu().numpy().transpose(0, 2, 3, 1)
+                # Medimos tiempo de inferencia por sub-batch
+                start_time = torch.cuda.Event(enable_timing=True)
+                end_time = torch.cuda.Event(enable_timing=True)
+                start_time.record()
 
-            # Recorremos cada muestra del batch
-            for i in range(outputs_np.shape[0]):
-                output_image = outputs_np[i]  # (H, W, C)
-                label_image = labels_np[i]    # (H, W, C)
-                filename = filenames[i]
+                # Forward con precisión mixta
+                with autocast():
+                    sub_outputs = model(sub_inputs)
 
-                psnr_per_channel = []
-                ssim_per_channel = []
-                epi_per_channel = []
+                end_time.record()
+                torch.cuda.synchronize()  # Sincronizar tiempo GPU
+                elapsed_time = start_time.elapsed_time(end_time)
 
-                # Métricas por canal
-                for channel in range(output_image.shape[-1]):
-                    output_2d = output_image[..., channel]
-                    label_2d = label_image[..., channel]
+                # Convertir a numpy
+                sub_outputs_np = sub_outputs.cpu().numpy().transpose(0, 2, 3, 1)
+                sub_labels_np = sub_labels.cpu().numpy().transpose(0, 2, 3, 1)
 
-                    psnr_channel = PSNR(output_2d, label_2d)
-                    psnr_per_channel.append(psnr_channel)
+                # Calcular métricas para cada imagen del sub-batch
+                for i in range(sub_outputs_np.shape[0]):
+                    output_image = sub_outputs_np[i]
+                    label_image = sub_labels_np[i]
+                    filename = sub_filenames[i]
 
-                    try:
-                        ssim_channel = SSIM(output_2d, label_2d)
-                        ssim_per_channel.append(ssim_channel)
-                    except Exception as e:
-                        print(f"Error calculando SSIM para el canal {channel} en {filename}: {e}")
-                        ssim_per_channel.append(0)
+                    psnr_per_channel = []
+                    ssim_per_channel = []
+                    epi_per_channel = []
 
-                    try:
-                        epi_channel = EPI(output_2d[np.newaxis, ...], label_2d[np.newaxis, ...])
-                        epi_per_channel.append(epi_channel)
-                    except Exception as e:
-                        print(f"Error calculando EPI para el canal {channel} en {filename}: {e}")
-                        epi_per_channel.append(0)
+                    for channel in range(output_image.shape[-1]):
+                        output_2d = output_image[..., channel]
+                        label_2d = label_image[..., channel]
 
-                # Promedio de métricas por canal
-                psnr = float(np.mean(psnr_per_channel))
-                ssim = float(np.mean(ssim_per_channel))
-                epi = float(np.mean(epi_per_channel))
+                        psnr_channel = PSNR(output_2d, label_2d)
+                        psnr_per_channel.append(psnr_channel)
 
-                # Escribimos métricas por imagen
-                with open(per_image_csv_path, "a", newline="") as per_image_csv:
-                    writer = csv.writer(per_image_csv)
-                    writer.writerow([filename, psnr, ssim, epi, elapsed_time])
+                        try:
+                            ssim_channel = SSIM(output_2d, label_2d)
+                            ssim_per_channel.append(ssim_channel)
+                        except Exception as e:
+                            print(f"Error calculando SSIM para el canal {channel} en {filename}: {e}")
+                            ssim_per_channel.append(0)
 
-                # Agregamos al conjunto global de métricas
-                overall_metrics["PSNR"].append(psnr)
-                overall_metrics["SSIM"].append(ssim)
-                overall_metrics["EPI"].append(epi)
-                overall_metrics["Time"].append(elapsed_time)
+                        try:
+                            epi_channel = EPI(output_2d[np.newaxis, ...], label_2d[np.newaxis, ...])
+                            epi_per_channel.append(epi_channel)
+                        except Exception as e:
+                            print(f"Error calculando EPI para el canal {channel} en {filename}: {e}")
+                            epi_per_channel.append(0)
 
-                # Guardar la imagen generada en .mat
-                output_file = os.path.join(test_path, f"{os.path.splitext(filename)[0]}_output.mat")
-                savemat(output_file, {'generated': output_image, 'ground_truth': label_image})
-                print(f"Imagen guardada en {output_file}")
+                    # Promedio de métricas por canal
+                    psnr = float(np.mean(psnr_per_channel))
+                    ssim = float(np.mean(ssim_per_channel))
+                    epi = float(np.mean(epi_per_channel))
 
-    # Guardamos promedios globales de las métricas
+                    # Escribir métricas por imagen
+                    with open(per_image_csv_path, "a", newline="") as per_image_csv:
+                        writer = csv.writer(per_image_csv)
+                        writer.writerow([filename, psnr, ssim, epi, elapsed_time])
+
+                    # Guardar métricas globales
+                    overall_metrics["PSNR"].append(psnr)
+                    overall_metrics["SSIM"].append(ssim)
+                    overall_metrics["EPI"].append(epi)
+                    overall_metrics["Time"].append(elapsed_time)
+
+                    # Guardar imagen generada en .mat
+                    output_file = os.path.join(test_path, f"{os.path.splitext(filename)[0]}_output.mat")
+                    savemat(output_file, {'generated': output_image, 'ground_truth': label_image})
+                    print(f"Imagen guardada en {output_file}")
+
+                # Limpiar memoria después de cada sub-batch
+                torch.cuda.empty_cache()
+
+    # Guardar métricas generales
     with open(overall_metrics_csv_path, "w", newline="") as overall_csv:
         writer = csv.writer(overall_csv)
         writer.writerow(["Metric", "Average Value"])
