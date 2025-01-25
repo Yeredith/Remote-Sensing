@@ -33,9 +33,7 @@ def augment_patches(hr_patch, lr_patch):
     yield hr_fliplr, lr_fliplr
 
 def add_noise_with_snr(image, snr):
-    """
-    Agrega ruido a 'image' según un SNR especificado (dB).
-    """
+
     signal_power = np.mean(image ** 2)
     noise_power = signal_power / (10 ** (snr / 10))
     noise = np.random.normal(0, np.sqrt(noise_power), image.shape).astype(np.float32)
@@ -44,10 +42,7 @@ def add_noise_with_snr(image, snr):
 
 def save_batch_to_h5(hr_data_list, lr_data_list, save_path,
                      idx, patch_size_hr, patch_size_lr):
-    """
-    Guardar un lote de datos HR y LR en un archivo HDF5.
-    Formato: 'HR' => (n, H_hr, W_hr, 3), 'LR' => (n, H_lr, W_lr, 3)
-    """
+
     mode = 'a' if os.path.exists(save_path) else 'w'
     with h5py.File(save_path, mode) as hf:
         if 'HR' not in hf:
@@ -70,7 +65,7 @@ def save_batch_to_h5(hr_data_list, lr_data_list, save_path,
             hf['LR'].resize(hf['LR'].shape[0] + len(lr_data_list), axis=0)
             hf['LR'][-len(lr_data_list):] = np.concatenate(lr_data_list, axis=0)
 
-    print(f"[INFO] Guardado lote con {len(hr_data_list)} elementos. Total procesado: {idx}")
+    print(f"Guardado lote con {len(hr_data_list)} elementos. Total procesado: {idx}")
 
 def prepare_data_rgb_val(base_path, save_path, 
                          patch_size_hr=128, patch_size_lr=32,
@@ -143,7 +138,7 @@ def prepare_data_rgb_val(base_path, save_path,
     if len(hr_data_list) > 0:
         save_batch_to_h5(hr_data_list, lr_data_list, save_path,
                          idx, patch_size_hr, patch_size_lr)
-        print(f"[INFO] Guardado el lote final (VALIDACIÓN) con {len(hr_data_list)} elementos.")
+        print(f"Guardado el lote final (VALIDACIÓN) con {len(hr_data_list)} elementos.")
 
 
 def prepare_data_with_noise_val(base_path, save_path,
