@@ -100,7 +100,7 @@
             }
         }
     },
-    "model_list": ["Modificacion2","SFCSR","MCNet"],
+    "model_list": ["Modificacion2","Modificacion1","Propuesto","Propuesto2","SFCSR","MCNet"],
     "test": {
         "test_data": {
             "normal": "F:/Remote Sensing/Data/Test/Normal",
