@@ -1,4 +1,5 @@
 
+
 ###########################
            #SFCSR
 ###########################
@@ -343,7 +344,7 @@ class MCNet(nn.Module):
 #Visual Attention Network with Large Kernel Attention (Based in Code GitHub)
 # Bloque de Atención: Large Kernel Attention (LKA)
 class LargeKernelAttention(nn.Module):
-    def __init__(self, n_feats, kernel_size, reduction):
+    def __init__(self, n_feats, kernel_size=5, reduction=8):
         super(LargeKernelAttention, self).__init__()
         self.conv1 = nn.Conv2d(n_feats, n_feats // reduction, kernel_size=1)
         self.conv2 = nn.Conv2d(n_feats // reduction, n_feats // reduction, kernel_size=kernel_size, padding=kernel_size // 2, groups=n_feats // reduction)
@@ -361,21 +362,27 @@ class LargeKernelAttention(nn.Module):
 class CrossChannelAttention(nn.Module):
     def __init__(self, n_feats, reduction):
         super(CrossChannelAttention, self).__init__()
-        self.query = nn.Conv2d(n_feats, n_feats // reduction, 1)
-        self.key = nn.Conv2d(n_feats, n_feats // reduction, 1)
-        self.value = nn.Conv2d(n_feats, n_feats, 1)
+        in_channels = 3 * n_feats   # tenemos r, g, b concatenados
+        # Query y Key tienen out_channels reducidos
+        self.query = nn.Conv2d(in_channels, in_channels // reduction, 1)
+        self.key   = nn.Conv2d(in_channels, in_channels // reduction, 1)
+        # Value devuelve la misma dimensión de la entrada (3*n_feats)
+        self.value = nn.Conv2d(in_channels, in_channels, 1)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, r, g, b):
         B, C, H, W = r.size()
         rgb = torch.cat([r, g, b], dim=1)
-        query = self.query(rgb).view(B, -1, H * W).permute(0, 2, 1)
-        key = self.key(rgb).view(B, -1, H * W)
-        value = self.value(rgb).view(B, -1, H * W)
-        attention = self.softmax(torch.bmm(query, key))
-        out = torch.bmm(value, attention.permute(0, 2, 1)).view(B, C, H, W)
+        query = self.query(rgb).view(B, -1, H*W).permute(0, 2, 1)  # [B, HW, outC]
+        key   = self.key(rgb).view(B, -1, H*W)                     # [B, outC, HW]
+        value = self.value(rgb).view(B, -1, H*W)                   # [B, 3*n_feats, HW]
+        attention = self.softmax(torch.bmm(query, key))            # [B, HW, HW]
+        out = torch.bmm(value, attention.permute(0, 2, 1))         # [B, 3*n_feats, HW]
+        out = out.view(B, -1, H, W)                                # => [B, 3*n_feats, H, W]
         r_out, g_out, b_out = torch.chunk(out, chunks=3, dim=1)
+
         return r + r_out, g + g_out, b + b_out
+
 
 #DCANet: Dual Convolutional Neural Network with Attention for Image Blind Denoising
 # Bloque de Denoising basado en DCANet

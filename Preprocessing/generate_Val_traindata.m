@@ -78,17 +78,17 @@ for index = 3238:4046
             label = imrotate(hrImage, 180);  
             data_augment(label, upscale_factor, savePath,count);
             % 
-            % label = imrotate(hrImage, 90);
-            % data_augment(label, upscale_factor, savePath);
+            label = imrotate(hrImage, 90);
+            data_augment(label, upscale_factor, savePath);
 
-            % label = imrotate(hrImage, 270);
-            % data_augment(label, upscale_factor, savePath);
+            label = imrotate(hrImage, 270);
+            data_augment(label, upscale_factor, savePath);
 
             label = flipdim(hrImage, 1);
             data_augment(label, upscale_factor, savePath,count);
             % 
-            % label = flipdim(hrImage, 2);
-            % data_augment(label, upscale_factor, savePath);
+            label = flipdim(hrImage, 2);
+            data_augment(label, upscale_factor, savePath);
             count = count + 1;
         end
         clear x_random;

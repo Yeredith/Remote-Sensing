@@ -3,23 +3,27 @@
     "database": {
         "name": "Remote",
         "base_path": "F:/Remote Sensing/Data",
-        "image_bands": 3
+        "image_bands": [0, 1, 2]
     },
     "output": {
-        "results_path": "F:/Remote Sensing/Data/output"
+        "results_path": "F:/Remote Sensing/Data/output",
+        "checkpoints": {
+            "normal": "F:/Remote Sensing/Data/output/checkpoints/normal",
+            "noise": "F:/Remote Sensing/Data/output/checkpoints/noise"
+        }
     },
     "training": {
         "batch_size": 64,
-        "epochs": 25,
+        "epochs": 1,
         "learning_rate": 1e-4,
         "seed": 1,
         "train_data": {
-            "normal": "F:/Remote Sensing/Data/Train/normal/4",
-            "noise": "F:/Remote Sensing/Data/Train/noise/4"
+            "normal": "F:/Remote Sensing/Data/Train/Normal/",
+            "noise": "F:/Remote Sensing/Data/Train/Noise/"
         },
         "val_data": {
-            "normal": "F:/Remote Sensing/Data/Validation/Train/normal/4",
-            "noise": "F:/Remote Sensing/Data/Validation/Train/noise/4"
+            "normal": "F:/Remote Sensing/Data/Validation/Normal/",
+            "noise": "F:/Remote Sensing/Data/Validation/Noise/"
         }
     },
     "gpu": {
@@ -96,12 +100,11 @@
             }
         }
     },
-    "model_list": ["Propuesto","MCNet", "SFCSR"],
+    "model_list": ["Propuesto2","Modificacion2","Modificacion1","Propuesto","MCNet","SFCSR"],
     "test": {
         "test_data": {
-            "normal": "F:/Remote Sensing/Data/Test/Normal/4",
-            "noise": "F:/Remote Sensing/Data/Test/Noise/4"
+            "normal": "F:/Remote Sensing/Data/Test/Normal",
+            "noise": "F:/Remote Sensing/Data/Test/Noise"
         }
     }
 }
-

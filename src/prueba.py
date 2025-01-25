@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from models import SFCSR, MCNet, Propuesto, Modificacion1, Modificacion2
-from scipy.io import loadmat
+import h5py
 from matplotlib.colors import Normalize
 import matplotlib.cm as cm
 
 # Rutas de datos y resultados
-HR_PATH = "F:/Remote Sensing/Data/Test/Original/1"
+HR_PATH = "F:/Remote Sensing/Data/Test"
 RESULTS_PATH = "F:/Remote Sensing/Data/output"
 MODELS = ["SFCSR", "MCNet", "Propuesto", "Modificacion1", "Modificacion2"]
 FILENAMES = [
@@ -18,20 +18,22 @@ FILENAMES = [
     "L18_112472_217096_s001"
 ]
 
-# Cargar imágenes SR y HR
+# Cargar imágenes SR y HR desde HDF5
 def load_images(model_path, hr_path, filename):
-    sr_file = os.path.join(model_path, f"{filename}_output.mat")
-    hr_file = os.path.join(hr_path, f"{filename}.mat")
+    sr_file = os.path.join(model_path, f"{filename}_output.h5")
+    hr_file = os.path.join(hr_path, "normal", f"{filename}.h5")
 
-    sr_data = loadmat(sr_file)["generated"].astype(np.float32)
+    # Leer SR desde archivo HDF5
+    with h5py.File(sr_file, "r") as sr_h5:
+        sr_data = sr_h5["SR"][:].astype(np.float32)
     sr_data = np.clip(sr_data, 0, 1)  # Clipping para asegurar rango válido
 
-    hr_data = loadmat(hr_file)
-    hr_key = list(hr_data.keys())[-1]  # Usar la última clave válida
-    hr_image = hr_data[hr_key].astype(np.float32)
-    hr_image = np.clip(hr_image, 0, 1)  # Normalizar HR si es necesario
+    # Leer HR desde archivo HDF5
+    with h5py.File(hr_file, "r") as hr_h5:
+        hr_data = hr_h5["HR"][:].astype(np.float32)
+    hr_data = np.clip(hr_data, 0, 1)  # Normalizar HR si es necesario
 
-    return sr_data, hr_image
+    return sr_data, hr_data
 
 # Calcular el error
 def compute_error(sr_image, hr_image):
@@ -53,12 +55,10 @@ def crop_and_highlight(image, crop_coords):
     return cropped, highlighted
 
 def error_to_rgb(error_image):
-
     cmap = cm.jet
     norm = Normalize(vmin=0, vmax=np.max(error_image))
     error_mapped = cmap(norm(error_image))[:, :, :3]  # Tomar solo los primeros 3 canales (RGB)
     return (error_mapped * 255).astype(np.uint8)
-
 
 # Visualizar resultados
 def plot_results(filename, hr_image, results, crop_coords):
@@ -130,7 +130,7 @@ def main():
             error_image = compute_error(sr_image, hr_image)
 
             # Extraer métricas para el archivo
-            file_metrics = metrics.get(f"{filename}.mat", {"PSNR": 0, "SSIM": 0, "EPI": 0})
+            file_metrics = metrics.get(f"{filename}.h5", {"PSNR": 0, "SSIM": 0, "EPI": 0})
 
             # Agregar resultados a la lista
             results.append((model_name, sr_image, error_image, file_metrics))
