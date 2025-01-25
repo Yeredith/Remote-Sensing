@@ -45,7 +45,7 @@
         },
         "Propuesto": {
             "upscale_factor": 4,
-            "n_feats": 16,
+            "n_feats": 32,
             "n_module": 4,
             "n_conv": 1,
             "cross_attention": {
@@ -63,7 +63,7 @@
         },
         "Propuesto2": {
             "upscale_factor": 4,
-            "n_feats": 16,
+            "n_feats": 32,
             "n_module": 4,
             "n_conv": 1,
             "denoising_block": {
@@ -78,7 +78,7 @@
         },
         "Modificacion1": {
             "upscale_factor": 4,
-            "n_feats": 16,
+            "n_feats": 32,
             "n_colors": 3,
             "n_conv": 1,
             "denoising_block": {
@@ -92,7 +92,7 @@
         },
         "Modificacion2": {
             "upscale_factor": 4,
-            "n_feats": 16,
+            "n_feats": 32,
             "n_colors": 3,
             "n_conv": 1,
             "cross_attention": {
@@ -100,7 +100,7 @@
             }
         }
     },
-    "model_list": ["Propuesto2","Modificacion2","Modificacion1","Propuesto","MCNet","SFCSR"],
+    "model_list": ["Propuesto","Propuesto2","Modificacion2","Modificacion1","SFCSR","MCNet"],
     "test": {
         "test_data": {
             "normal": "F:/Remote Sensing/Data/Test/Normal",

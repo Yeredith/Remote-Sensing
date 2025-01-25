@@ -344,10 +344,13 @@ class MCNet(nn.Module):
 #Visual Attention Network with Large Kernel Attention (Based in Code GitHub)
 # Bloque de Atención: Large Kernel Attention (LKA)
 class LargeKernelAttention(nn.Module):
-    def __init__(self, n_feats, kernel_size=5, reduction=8):
+    def __init__(self, n_feats, kernel_size=5, reduction=16):  # Aumentar reducción para ahorrar memoria
         super(LargeKernelAttention, self).__init__()
         self.conv1 = nn.Conv2d(n_feats, n_feats // reduction, kernel_size=1)
-        self.conv2 = nn.Conv2d(n_feats // reduction, n_feats // reduction, kernel_size=kernel_size, padding=kernel_size // 2, groups=n_feats // reduction)
+        self.conv2 = nn.Conv2d(
+            n_feats // reduction, n_feats // reduction,
+            kernel_size=kernel_size, padding=kernel_size // 2, groups=n_feats // reduction
+        )
         self.conv3 = nn.Conv2d(n_feats // reduction, n_feats, kernel_size=1)
         self.sigmoid = nn.Sigmoid()
 
@@ -358,30 +361,37 @@ class LargeKernelAttention(nn.Module):
         return x * self.sigmoid(y)
 
 
-# Bloque de Atención Cruzada entre canales RGB
+
 class CrossChannelAttention(nn.Module):
-    def __init__(self, n_feats, reduction):
+    def __init__(self, n_feats, reduction=16):  # Aumentar reducción para ahorrar memoria
         super(CrossChannelAttention, self).__init__()
-        in_channels = 3 * n_feats   # tenemos r, g, b concatenados
-        # Query y Key tienen out_channels reducidos
-        self.query = nn.Conv2d(in_channels, in_channels // reduction, 1)
-        self.key   = nn.Conv2d(in_channels, in_channels // reduction, 1)
-        # Value devuelve la misma dimensión de la entrada (3*n_feats)
+        in_channels = 3 * n_feats
+        reduced_channels = in_channels // reduction
+
+        self.query = nn.Conv2d(in_channels, reduced_channels, 1)
+        self.key = nn.Conv2d(in_channels, reduced_channels, 1)
         self.value = nn.Conv2d(in_channels, in_channels, 1)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, r, g, b):
         B, C, H, W = r.size()
         rgb = torch.cat([r, g, b], dim=1)
-        query = self.query(rgb).view(B, -1, H*W).permute(0, 2, 1)  # [B, HW, outC]
-        key   = self.key(rgb).view(B, -1, H*W)                     # [B, outC, HW]
-        value = self.value(rgb).view(B, -1, H*W)                   # [B, 3*n_feats, HW]
-        attention = self.softmax(torch.bmm(query, key))            # [B, HW, HW]
-        out = torch.bmm(value, attention.permute(0, 2, 1))         # [B, 3*n_feats, HW]
-        out = out.view(B, -1, H, W)                                # => [B, 3*n_feats, H, W]
+        query = self.query(rgb).view(B, -1, H * W).permute(0, 2, 1)
+        key = self.key(rgb).view(B, -1, H * W)
+        value = self.value(rgb).view(B, -1, H * W)
+
+        # Reducir atención a ventanas si H * W es muy grande
+        if H * W > 512 * 512:  # Ajusta este umbral según la memoria disponible
+            window_size = 128  # Tamaño de la ventana
+            query = query[:, :window_size, :]
+            key = key[:, :, :window_size]
+
+        attention = self.softmax(torch.bmm(query, key))
+        out = torch.bmm(value, attention.permute(0, 2, 1)).view(B, -1, H, W)
         r_out, g_out, b_out = torch.chunk(out, chunks=3, dim=1)
 
         return r + r_out, g + g_out, b + b_out
+
 
 
 #DCANet: Dual Convolutional Neural Network with Attention for Image Blind Denoising
@@ -389,47 +399,42 @@ class CrossChannelAttention(nn.Module):
 class DenoisingBlock(nn.Module):
     def __init__(self, n_feats):
         super(DenoisingBlock, self).__init__()
-        self.conv1 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1)
-        self.act = nn.ReLU(inplace=True)
+        self.conv1 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1, bias=False)
+        self.act1 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1, bias=False)
 
     def forward(self, x):
         residual = x
-        x = self.act(self.conv1(x))
+        x = self.act1(self.conv1(x))
         x = self.conv2(x)
         return x + residual
 
 
-# Modelo Propuesto con Módulos de Atención y Denoising
+
 class Propuesto(nn.Module):
     def __init__(self, args):
         super(Propuesto, self).__init__()
-        
+
         upscale_factor = int(args.upscale_factor)
         n_feats = args.n_feats
-        reduction = args.cross_attention.get("query_key_reduction", 8)
-        
+        reduction = args.cross_attention.get("query_key_reduction", 16)  # Reducir para ahorrar memoria
+
         wn = lambda x: nn.utils.weight_norm(x)
 
-        # Cabezas para procesar canales RGB
         self.R_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
         self.G_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
         self.B_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
 
-        # Bloques de Denoising
         self.R_denoising = DenoisingBlock(n_feats)
         self.G_denoising = DenoisingBlock(n_feats)
         self.B_denoising = DenoisingBlock(n_feats)
 
-        # Bloques de Atención
         self.R_attention = LargeKernelAttention(n_feats)
         self.G_attention = LargeKernelAttention(n_feats)
         self.B_attention = LargeKernelAttention(n_feats)
 
-        # Atención Cruzada
         self.cross_attention = CrossChannelAttention(n_feats, reduction)
 
-        # Reconstrucción
         self.tail = nn.Sequential(
             nn.Conv2d(n_feats, n_feats * (upscale_factor ** 2), kernel_size=3, stride=1, padding=1),
             nn.PixelShuffle(upscale_factor),
@@ -437,36 +442,36 @@ class Propuesto(nn.Module):
         )
 
     def forward(self, x):
-        # Separar canales RGB
         r, g, b = x[:, 0:1, :, :], x[:, 1:2, :, :], x[:, 2:3, :, :]
 
-        # Procesar cada canal por separado
+        # Procesar canales secuencialmente
         r_feat = self.R_head(r)
-        g_feat = self.G_head(g)
-        b_feat = self.B_head(b)
-
         r_feat = self.R_denoising(r_feat)
-        g_feat = self.G_denoising(g_feat)
-        b_feat = self.B_denoising(b_feat)
-
         r_feat = self.R_attention(r_feat)
+
+        g_feat = self.G_head(g)
+        g_feat = self.G_denoising(g_feat)
         g_feat = self.G_attention(g_feat)
+
+        b_feat = self.B_head(b)
+        b_feat = self.B_denoising(b_feat)
         b_feat = self.B_attention(b_feat)
 
-        # Aplicar Atención Cruzada
         r_feat, g_feat, b_feat = self.cross_attention(r_feat, g_feat, b_feat)
-
-        # Combinar características y reconstruir
         combined_feat = r_feat + g_feat + b_feat
         out = self.tail(combined_feat)
 
         return out
+
     
 ############################
 # Modificacion 1
 # - Eliminar CrossChannelAttention y combinar directamente las características de los canales después de los bloques de atención.
 ############################
 
+############################
+# Modificacion 1 (Optimizada)
+############################
 class Modificacion1(nn.Module):
     def __init__(self, args):
         super(Modificacion1, self).__init__()
@@ -481,15 +486,15 @@ class Modificacion1(nn.Module):
         self.G_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
         self.B_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
 
-        # Bloques de Denoising
+        # Bloques de Denoising (simplificados)
         self.R_denoising = DenoisingBlock(n_feats)
         self.G_denoising = DenoisingBlock(n_feats)
         self.B_denoising = DenoisingBlock(n_feats)
 
-        # Bloques de Atención
-        self.R_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
-        self.G_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
-        self.B_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        # Bloques de Atención (reducción ajustada para ahorro de memoria)
+        self.R_attention = LargeKernelAttention(n_feats, kernel_size=3, reduction=16)
+        self.G_attention = LargeKernelAttention(n_feats, kernel_size=3, reduction=16)
+        self.B_attention = LargeKernelAttention(n_feats, kernel_size=3, reduction=16)
 
         # Reconstrucción
         self.tail = nn.Sequential(
@@ -504,15 +509,14 @@ class Modificacion1(nn.Module):
 
         # Procesar cada canal por separado
         r_feat = self.R_head(r)
-        g_feat = self.G_head(g)
-        b_feat = self.B_head(b)
-
         r_feat = self.R_denoising(r_feat)
-        g_feat = self.R_attention(r_feat)
+        r_feat = self.R_attention(r_feat)
 
+        g_feat = self.G_head(g)
         g_feat = self.G_denoising(g_feat)
         g_feat = self.G_attention(g_feat)
 
+        b_feat = self.B_head(b)
         b_feat = self.B_denoising(b_feat)
         b_feat = self.B_attention(b_feat)
 
@@ -533,7 +537,7 @@ class Modificacion2(nn.Module):
 
         upscale_factor = int(args.upscale_factor)
         n_feats = args.n_feats
-        reduction = args.cross_attention.get("query_key_reduction", 8)
+        reduction = args.cross_attention.get("query_key_reduction", 16)  # Reducción aumentada para ahorro de memoria
 
         wn = lambda x: nn.utils.weight_norm(x)
 
@@ -542,12 +546,12 @@ class Modificacion2(nn.Module):
         self.G_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
         self.B_head = wn(nn.Conv2d(1, n_feats, kernel_size=3, stride=1, padding=1))
 
-        # Bloques de Atención
-        self.R_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
-        self.G_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
-        self.B_attention = LargeKernelAttention(n_feats, kernel_size=5, reduction=8)
+        # Bloques de Atención (con reducción ajustada)
+        self.R_attention = LargeKernelAttention(n_feats, kernel_size=3, reduction=16)
+        self.G_attention = LargeKernelAttention(n_feats, kernel_size=3, reduction=16)
+        self.B_attention = LargeKernelAttention(n_feats, kernel_size=3, reduction=16)
 
-        # Atención Cruzada
+        # Atención Cruzada optimizada
         self.cross_attention = CrossChannelAttention(n_feats, reduction)
 
         # Reconstrucción
@@ -578,7 +582,6 @@ class Modificacion2(nn.Module):
         out = self.tail(combined_feat)
 
         return out
-
 
 
 ############################################
@@ -659,17 +662,20 @@ class Propuesto3(nn.Module):
 
 """
 
+import torch.nn as nn
+
 class DenoisingBlock2(nn.Module):
     def __init__(self, n_feats):
         super(DenoisingBlock2, self).__init__()
         self.conv1 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1)
-        self.norm1 = nn.BatchNorm2d(n_feats)
+        # GroupNorm con 8 grupos (por ejemplo). 
+        # Ajusta a tu gusto: num_groups=8, num_channels=n_feats
+        self.norm1 = nn.GroupNorm(num_groups=4, num_channels=n_feats)  
         self.act1 = nn.ReLU(inplace=True)
 
         self.conv2 = nn.Conv2d(n_feats, n_feats, kernel_size=3, padding=1)
-        self.norm2 = nn.BatchNorm2d(n_feats)
+        self.norm2 = nn.GroupNorm(num_groups=4, num_channels=n_feats)
 
-        # Atención ligera para priorizar regiones clave
         self.attention = nn.Sequential(
             nn.Conv2d(n_feats, n_feats // 8, kernel_size=1),
             nn.ReLU(inplace=True),
@@ -681,8 +687,9 @@ class DenoisingBlock2(nn.Module):
         residual = x
         x = self.act1(self.norm1(self.conv1(x)))
         x = self.norm2(self.conv2(x))
-        x = x * self.attention(x)  # Aplicar atención
+        x = x * self.attention(x)
         return x + residual
+
     
 
 class Propuesto2(nn.Module):

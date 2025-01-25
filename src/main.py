@@ -508,9 +508,9 @@ def main():
             model, optimizer, start_epoch_noise = load_last_checkpoint(model, optimizer, checkpoints_path, mode="noise")
 
 
-            model.load_state_dict(initial_model_state)
-            optimizer.load_state_dict(initial_optimizer_state)
-            start_epoch_normal = 0
+            #model.load_state_dict(initial_model_state)
+            #optimizer.load_state_dict(initial_optimizer_state)
+            #start_epoch_normal = 0
 
             if start_epoch_normal < config["training"]["epochs"]:
                 train_loss_values_normal = []
@@ -531,9 +531,9 @@ def main():
                     save_metrics_to_csv(csv_path, [train_loss], [val_loss], "normal")
 
 
-            model.load_state_dict(initial_model_state)
-            optimizer.load_state_dict(initial_optimizer_state)
-            start_epoch_noise = 0
+            #model.load_state_dict(initial_model_state)
+            #optimizer.load_state_dict(initial_optimizer_state)
+            #start_epoch_noise = 0
 
 
             if start_epoch_noise < config["training"]["epochs"]:
