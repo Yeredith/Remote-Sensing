@@ -14,7 +14,7 @@
     },
     "training": {
         "batch_size": 64,
-        "epochs": 1,
+        "epochs": 100,
         "learning_rate": 1e-4,
         "seed": 1,
         "train_data": {
@@ -100,7 +100,7 @@
             }
         }
     },
-    "model_list": ["Propuesto","Propuesto2","Modificacion2","Modificacion1","SFCSR","MCNet"],
+    "model_list": ["Propuesto2","SFCSR","MCNet"],
     "test": {
         "test_data": {
             "normal": "F:/Remote Sensing/Data/Test/Normal",
